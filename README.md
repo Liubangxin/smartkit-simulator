@@ -1,93 +1,167 @@
-SmartKit Storage Simulator
-==========================
+# SmartKit Storage Simulator
 
-基于 Python 的本地 SSH 服务，模拟一台存储设备的管理界面。通过标准 SSH 协议连接后，可以像操作一台真实的网络存储设备一样执行管理命令。
+SmartKit Storage Simulator 是一个本地 SSH 存储设备模拟器。它使用 Python、Flask 和 Paramiko 提供 Web 图形界面，可配置 SSH 登录信息和命令输出，用于模拟存储设备 CLI 命令返回。
 
+## 功能概览
 
-## 快速开始
+- Web GUI 管理 SSH 服务端口、用户名和密码。
+- 支持新增、删除、编辑模拟命令。
+- 命令名称不允许重复。
+- 命令编辑器默认只读，点击 **Edit** 后才能修改；进入编辑后按钮变为 **Cancel**。
+- 点击 **Save Command** 后保存到 `config.json`。
+- SSH 服务运行期间会读取最新命令配置。
+- 支持 Stop -> Start 重启服务，并确保旧服务停止后再启动新服务。
+- 底部日志面板可上下拖动调整高度。
+- 命令输出自动统一为 CRLF，避免 PowerShell / SSH 终端多行输出错位。
+
+## 开发环境配置
+
+建议在项目根目录创建 Python 虚拟环境：
 
 ```powershell
-# 启动服务
-.\run.ps1
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
 
-# 另一个终端，直接执行命令
-ssh admin@127.0.0.1 -p 2222 show system.general
+如果 PowerShell 阻止执行脚本，可以在当前终端临时放开执行策略：
 
-# 或进入交互式 Shell
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+```
+
+## 启动 GUI
+
+推荐使用启动脚本：
+
+```powershell
+.\start_gui.ps1
+```
+
+`start_gui.ps1` 会优先使用项目目录下的 `.venv\Scripts\python.exe`。如果没有创建虚拟环境，会继续尝试系统中的 `python` 或 `py -3`。
+
+也可以直接运行：
+
+```powershell
+python .\simulator_gui.py
+```
+
+启动后访问：
+
+```text
+http://127.0.0.1:5800
+```
+
+如果 `5800` 被占用，程序会自动尝试 `5801` 到 `5899` 范围内的可用端口。
+
+## 使用 GUI
+
+1. 在顶部配置 SSH 端口、用户名和密码。
+2. 在左侧选择已有命令，或点击 **+ New** 创建命令。
+3. 右侧命令编辑器默认只读，点击 **Edit** 后进入编辑模式。
+4. 修改命令名称、描述或输出内容。
+5. 点击 **Save Command** 保存配置。
+6. 点击 **Start Server** 启动 SSH 服务。
+7. 在 PowerShell 中使用 SSH 命令连接测试。
+
+## SSH 调用示例
+
+```powershell
+ssh admin@127.0.0.1 -p 2222 show system general
+```
+
+进入交互式 Shell：
+
+```powershell
 ssh admin@127.0.0.1 -p 2222
 ```
 
-**默认凭据：** 用户名 `admin`，密码 `admin123`
+默认用户名为 `admin`，默认密码为 `admin123`。
 
+## 命令输出变量
 
-## 命令参考
+GUI 中配置的命令输出支持以下变量，执行命令时会自动替换：
 
-| 命令 | 说明 |
-|---|---|
-| `show system.general` | 显示系统通用信息（设备名、型号、固件、运行时间、资源使用等） |
-| `help` | 显示可用命令列表（仅交互模式） |
-| `exit` / `quit` | 退出当前会话（仅交互模式） |
+| 变量 | 说明 | 示例 |
+|---|---|---|
+| `{date}` | 当前日期 | 2026-07-14 |
+| `{time}` | 当前时间 | 15:30:00 |
+| `{datetime}` | 当前日期和时间 | 2026-07-14 15:30:00 |
+| `{date_mmdd}` | 月日 | 0714 |
+| `{date_yyyymmdd}` | 年月日 | 20260714 |
+| `{sn}` | 随机序列号 | 9 位数字 |
 
+## CLI 模式
 
-## 配置
+也可以运行早期 CLI 版 SSH 模拟器：
 
-在 [server.py](server.py) 顶部修改以下变量：
-
-```python
-HOST = "127.0.0.1"   # 监听地址
-PORT = 2222          # 监听端口
-USERNAME = "admin"   # 登录用户名
-PASSWORD = "admin123" # 登录密码
+```powershell
+.\run.ps1
 ```
 
-首次启动会自动生成 `host_key`（RSA 2048 位），无需手动配置。
+注意：CLI 模式使用 `server.py`，主要是早期固定命令版本。推荐使用 `simulator_gui.py` 的 Web GUI 版本。
 
+## 项目结构
 
-## 架构
-
+```text
+simulator/
+  simulator_gui.py        Flask Web GUI 和可配置 SSH 服务
+  index.html              GUI 页面
+  config.json             服务配置和命令输出配置
+  requirements.txt        Python 运行依赖
+  start_gui.ps1           GUI 开发启动脚本
+  server.py               CLI SSH 模拟服务
+  run.ps1                 CLI 启动脚本
+  tests/
+    test_simulator_gui.py SSH 服务端回归测试
+    test_index_html.js    前端行为测试
+    test_portability.py   启动脚本和文档检查
+  README.md
 ```
-客户端                 服务端
-──────                ──────
-ssh 连接    ──────►   socket.accept()
-                      └── 每条连接分配独立线程
-                          └── paramiko.Transport（SSH 握手 + 加密）
-                              └── StorageSimulatorServer（认证 + 命令路由）
-                                  ├── exec_command → handle_exec()
-                                  └── shell 会话   → handle_shell()
+
+## 测试
+
+建议先激活虚拟环境：
+
+```powershell
+.\.venv\Scripts\Activate.ps1
 ```
 
-- **传输层**：paramiko 处理 SSH 协议协商、加密、通道管理
-- **认证层**：`check_auth_password` 拦截密码验证
-- **通道层**：`check_channel_shell_request` / `check_channel_exec_request` 分派到对应处理函数
-- **并发**：每个客户端连接一个独立线程，互不阻塞
+前端行为测试：
 
+```powershell
+node tests/test_index_html.js
+```
+
+Python / SSH 服务端测试：
+
+```powershell
+python -m unittest tests.test_simulator_gui
+```
+
+启动脚本和文档检查：
+
+```powershell
+python -m unittest tests.test_portability
+```
+
+Python 语法检查：
+
+```powershell
+python -m py_compile simulator_gui.py tests/test_simulator_gui.py tests/test_portability.py
+```
 
 ## 依赖
 
 - Python 3.12+
-- [paramiko](https://www.paramiko.org/) 5.0+
+- Flask >= 3.0
+- Paramiko >= 5.0
+- Node.js，仅运行前端测试时需要
 
-```powershell
-pip install paramiko
-```
+## 注意事项
 
-
-## 输出示例
-
-```
-$ ssh admin@127.0.0.1 -p 2222 show system.general
-
-System General Information
-==========================
-Device Name:    SmartKit Storage Simulator
-Model:          SK-2000
-Firmware:       v2.3.1 (Build 20260714)
-Serial Number:  SK20260714001
-System Uptime:  0 days, 2 hours, 15 minutes
-System Time:    2026-07-14 15:00:00 CST
-CPU Usage:      12%
-Memory:         4096 MB total, 1024 MB used, 3072 MB free
-Storage Pools:  2
-Volumes:        5
-Network:        eth0: 192.168.1.100/24
-```
+- `.venv/` 是本地虚拟环境目录，不应提交到 Git。
+- `config.json` 会保存 SSH 用户名、密码和命令输出配置。
+- 本工具面向本地模拟测试使用，默认监听 `127.0.0.1`。
+- 如果端口被占用，GUI 日志区会显示绑定端口失败信息。

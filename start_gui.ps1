@@ -6,6 +6,10 @@ function Resolve-PythonCommand {
     if ($PythonPath) {
         return @($PythonPath)
     }
+    $venvPython = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+    if (Test-Path $venvPython) {
+        return @($venvPython)
+    }
     if (Get-Command python -ErrorAction SilentlyContinue) {
         return @("python")
     }
@@ -22,4 +26,4 @@ if ($python.Count -gt 1) {
 }
 $pythonCommand = $python[0]
 
-& $pythonCommand @pythonArgs -u (Join-Path $PSScriptRoot "server.py")
+& $pythonCommand @pythonArgs -u (Join-Path $PSScriptRoot "simulator_gui.py")

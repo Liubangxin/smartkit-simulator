@@ -1,5 +1,9 @@
 host_key
+.venv/
 __pycache__/
 *.pyc
+*.spec
+build/
+dist/
 server_out.txt
 server_err.txt

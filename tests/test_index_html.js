@@ -36,10 +36,15 @@ const context = {
     },
   },
   window: { innerHeight: 600, addEventListener() {} },
-  fetch() {
+  fetch(url, options) {
+    context.fetchCalls.push({ url, options });
     return Promise.resolve({ json: () => Promise.resolve({ server: {}, commands: [] }) });
   },
+  fetchCalls: [],
   setTimeout() {},
+  alert(message) {
+    throw new Error(message);
+  },
 };
 
 vm.createContext(context);
@@ -84,4 +89,16 @@ assert.strictEqual(elements.cmdName.disabled, false);
 assert.strictEqual(elements.saveBtn.disabled, false);
 assert.strictEqual(elements.editBtn.textContent, "Cancel");
 
-console.log("index.html command editor tests passed");
+element("bindAddress").value = "0.0.0.0";
+element("port").value = "2222";
+element("username").value = "admin";
+element("password").value = "admin123";
+context.startServer().then(() => {
+  const startCall = context.fetchCalls.find((call) => call.url === "/api/server/start");
+  assert.ok(startCall);
+  assert.strictEqual(JSON.parse(startCall.options.body).bind_address, "0.0.0.0");
+  console.log("index.html command editor tests passed");
+}).catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

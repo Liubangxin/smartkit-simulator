@@ -55,6 +55,7 @@ class SimulatorGuiSshTests(unittest.TestCase):
         threading.Thread(
             target=simulator_gui.run_server,
             args=(
+                "127.0.0.1",
                 port,
                 config["server"]["username"],
                 config["server"]["password"],
@@ -101,6 +102,7 @@ class SimulatorGuiSshTests(unittest.TestCase):
             threading.Thread(
                 target=simulator_gui.run_server,
                 args=(
+                    "127.0.0.1",
                     port,
                     test_config["server"]["username"],
                     test_config["server"]["password"],
@@ -199,6 +201,49 @@ class SimulatorGuiSshTests(unittest.TestCase):
                 "\n".join(logs),
             )
         finally:
+            simulator_gui.save_config(original_config)
+
+    def test_start_api_saves_bind_address_and_passes_it_to_server(self):
+        original_config = simulator_gui.load_config()
+        port = free_port()
+        captured_args = []
+
+        def fake_run_server(*args):
+            captured_args.append(args)
+
+        old_run_server = simulator_gui.run_server
+        try:
+            simulator_gui.run_server = fake_run_server
+            simulator_gui.save_config(
+                {
+                    "server": {
+                        "port": 2222,
+                        "username": "admin",
+                        "password": "admin123",
+                    },
+                    "commands": [],
+                }
+            )
+
+            response = simulator_gui.app.test_client().post(
+                "/api/server/start",
+                json={
+                    "bind_address": "0.0.0.0",
+                    "port": port,
+                    "username": "admin",
+                    "password": "admin123",
+                },
+            )
+            time.sleep(0.2)
+
+            saved_config = simulator_gui.load_config()
+            self.assertEqual(200, response.status_code)
+            self.assertEqual("0.0.0.0", saved_config["server"]["bind_address"])
+            self.assertTrue(captured_args)
+            self.assertEqual("0.0.0.0", captured_args[0][0])
+            self.assertEqual(port, captured_args[0][1])
+        finally:
+            simulator_gui.run_server = old_run_server
             simulator_gui.save_config(original_config)
 
     def test_command_output_uses_crlf_line_endings_for_terminal_alignment(self):

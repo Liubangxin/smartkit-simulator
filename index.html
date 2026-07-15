@@ -30,6 +30,7 @@ button { transition: background-color 0.15s ease, border-color 0.15s ease, color
 .topbar input { height: 30px; padding: 4px 9px; border: 1px solid var(--line-strong); border-radius: 6px; font-size: 13px; background: #fff; color: var(--text); outline: none; }
 .topbar input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(36, 107, 254, 0.13); }
 .topbar .port-inp { width: 72px; }
+.topbar .bind-inp { width: 116px; }
 .topbar .cred-inp { width: 112px; }
 .topbar button { height: 30px; padding: 0 15px; border: 1px solid transparent; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
 .btn-start { background: var(--success); color: #fff; }
@@ -75,6 +76,7 @@ body.resizing-log { cursor: ns-resize; user-select: none; }
 <body>
 <div class="topbar">
   <div class="brand">SmartKit Simulator</div>
+  <label>Bind: <input id="bindAddress" class="bind-inp" type="text" value="127.0.0.1"></label>
   <label>Port: <input id="port" class="port-inp" type="number" value="2222"></label>
   <label>User: <input id="username" class="cred-inp" type="text" value="admin"></label>
   <label>Pass: <input id="password" class="cred-inp" type="password" value="admin123"></label>
@@ -110,7 +112,7 @@ body.resizing-log { cursor: ns-resize; user-select: none; }
 <div id="logArea" class="log-area"></div>
 
 <script>
-let config = { server: {port:2222, username:"admin", password:"admin123"}, commands: [] };
+let config = { server: {bind_address:"127.0.0.1", port:2222, username:"admin", password:"admin123"}, commands: [] };
 let selectedIdx = -1;
 let isEditing = false;
 let logPoll = null;
@@ -122,6 +124,7 @@ let resizeStartHeight = 112;
 async function init() {
   let r = await fetch("/api/config");
   config = await r.json();
+  document.getElementById("bindAddress").value = config.server.bind_address || "127.0.0.1";
   document.getElementById("port").value = config.server.port;
   document.getElementById("username").value = config.server.username;
   document.getElementById("password").value = config.server.password;
@@ -275,14 +278,15 @@ async function saveConfig() {
 }
 
 async function startServer() {
+  let bind_address = document.getElementById("bindAddress").value.trim() || "127.0.0.1";
   let port = parseInt(document.getElementById("port").value);
   let username = document.getElementById("username").value.trim();
   let password = document.getElementById("password").value.trim();
   if (!username) return alert("Username required.");
-  config.server = { port, username, password };
+  config.server = { bind_address, port, username, password };
   await saveConfig();
-  await fetch("/api/server/start", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({port,username,password}) });
-  document.getElementById("status").textContent = "Running :" + port;
+  await fetch("/api/server/start", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({bind_address,port,username,password}) });
+  document.getElementById("status").textContent = "Running " + bind_address + ":" + port;
   document.getElementById("status").className = "status running";
 }
 

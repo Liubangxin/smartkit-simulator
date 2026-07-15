@@ -22,6 +22,13 @@ stop_event = threading.Event()
 server_thread = None
 server_lock = threading.Lock()
 
+DEFAULT_SERVER = {
+    "bind_address": "127.0.0.1",
+    "port": 2222,
+    "username": "admin",
+    "password": "admin123",
+}
+
 def substitute_variables(text):
     now = datetime.datetime.now()
     sn = "".join(random.choices(string.digits, k=9))
@@ -38,12 +45,16 @@ def format_command_output(text):
 def load_config():
     if os.path.exists(CONFIG_PATH):
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+            config = json.load(f)
+            config["server"] = {**DEFAULT_SERVER, **config.get("server", {})}
+            return config
     bundled_config = resource_path("config.json")
     if os.path.exists(bundled_config):
         with open(bundled_config, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {"server": {"port": 2222, "username": "admin", "password": "admin123"}, "commands": []}
+            config = json.load(f)
+            config["server"] = {**DEFAULT_SERVER, **config.get("server", {})}
+            return config
+    return {"server": dict(DEFAULT_SERVER), "commands": []}
 
 def save_config(config):
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
@@ -143,7 +154,8 @@ class SimulatorServer(paramiko.ServerInterface):
         finally:
             channel.close()
 
-def run_server(port, username, password, commands, server_stop_event=None):
+def run_server(bind_address, port, username, password, commands, server_stop_event=None):
+    bind_address = (bind_address or "127.0.0.1").strip() or "127.0.0.1"
     stop_signal = server_stop_event or stop_event
     if not os.path.exists(HOST_KEY_PATH):
         paramiko.RSAKey.generate(2048).write_private_key_file(HOST_KEY_PATH)
@@ -152,12 +164,12 @@ def run_server(port, username, password, commands, server_stop_event=None):
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.settimeout(1.0)
     try:
-        sock.bind(("127.0.0.1", port))
+        sock.bind((bind_address, port))
     except OSError as e:
-        log_queue.put(f"[error] Cannot bind port {port}: {e}")
+        log_queue.put(f"[error] Cannot bind {bind_address}:{port}: {e}")
         return
     sock.listen(5)
-    log_queue.put(f"Server listening on 127.0.0.1:{port}")
+    log_queue.put(f"Server listening on {bind_address}:{port}")
     while not stop_signal.is_set():
         try:
             client, addr = sock.accept()
@@ -216,10 +228,17 @@ def api_start_server():
     global stop_event, server_thread
     config = load_config()
     data = request.get_json() or {}
+    bind_address = data.get("bind_address", config["server"].get("bind_address", "127.0.0.1"))
+    bind_address = (bind_address or "127.0.0.1").strip() or "127.0.0.1"
     port = data.get("port", config["server"]["port"])
     username = data.get("username", config["server"]["username"])
     password = data.get("password", config["server"]["password"])
-    config["server"] = {"port": port, "username": username, "password": password}
+    config["server"] = {
+        "bind_address": bind_address,
+        "port": port,
+        "username": username,
+        "password": password,
+    }
     save_config(config)
     with server_lock:
         if not stop_server_thread():
@@ -227,11 +246,11 @@ def api_start_server():
         stop_event = threading.Event()
         server_thread = threading.Thread(
             target=run_server,
-            args=(port, username, password, list(config["commands"]), stop_event),
+            args=(bind_address, port, username, password, list(config["commands"]), stop_event),
             daemon=True,
         )
         server_thread.start()
-    return jsonify({"status": "running", "port": port})
+    return jsonify({"status": "running", "bind_address": bind_address, "port": port})
 
 @app.route("/api/server/stop", methods=["POST"])
 def api_stop_server():

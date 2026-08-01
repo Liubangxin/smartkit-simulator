@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SmartKit Storage Simulator - Web GUI (Flask)"""
 
-import json, os, queue, socket, threading, time, datetime, random, string, webbrowser
+import json, os, queue, socket, sys, threading, time, datetime, random, string, webbrowser
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -9,13 +9,23 @@ import paramiko
 from flask import Flask, request, jsonify
 
 def resource_path(relative_path):
-    return os.path.join(BASE_DIR, relative_path)
+    base = getattr(sys, "_MEIPASS", BASE_DIR)
+    return os.path.join(base, relative_path)
+
+DATA_DIR = BASE_DIR
 
 def writable_path(relative_path):
-    return os.path.join(BASE_DIR, relative_path)
+    return os.path.join(DATA_DIR, relative_path)
+
+def set_data_dir(path):
+    global DATA_DIR, CONFIG_PATH, HOST_KEY_PATH
+    DATA_DIR = os.path.abspath(path)
+    os.makedirs(DATA_DIR, exist_ok=True)
+    CONFIG_PATH = writable_path("config.json")
+    HOST_KEY_PATH = os.path.join(DATA_DIR, "host_key")
 
 CONFIG_PATH = writable_path("config.json")
-HOST_KEY_PATH = os.path.join(BASE_DIR, "host_key")
+HOST_KEY_PATH = os.path.join(DATA_DIR, "host_key")
 app = Flask(__name__)
 log_queue = queue.Queue()
 stop_event = threading.Event()
@@ -268,18 +278,39 @@ def api_get_logs():
             break
     return jsonify(logs)
 
+def parse_args(argv=None):
+    import argparse
+    parser = argparse.ArgumentParser(description="SmartKit Storage Simulator")
+    parser.add_argument("--headless", action="store_true",
+                        help="Run without browser; print SMARTKIT_READY_PORT=<port>")
+    parser.add_argument("--data-dir", default=None,
+                        help="Directory for config.json and host_key")
+    return parser.parse_args(argv)
+
+def run_headless():
+    from werkzeug.serving import make_server
+    server = make_server("127.0.0.1", 0, app, threaded=True)
+    print(f"SMARTKIT_READY_PORT={server.server_port}", flush=True)
+    server.serve_forever()
+
 if __name__ == "__main__":
-    port = 5800
-    for p in range(5800, 5900):
-        try:
-            s = socket.socket()
-            s.bind(("127.0.0.1", p))
-            s.close()
-            port = p
-            break
-        except:
-            continue
-    url = f"http://127.0.0.1:{port}"
-    threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    print(f"GUI running at {url}")
-    app.run(host="127.0.0.1", port=port, debug=False)
+    args = parse_args()
+    if args.data_dir:
+        set_data_dir(args.data_dir)
+    if args.headless:
+        run_headless()
+    else:
+        port = 5800
+        for p in range(5800, 5900):
+            try:
+                s = socket.socket()
+                s.bind(("127.0.0.1", p))
+                s.close()
+                port = p
+                break
+            except OSError:
+                continue
+        url = f"http://127.0.0.1:{port}"
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+        print(f"GUI running at {url}")
+        app.run(host="127.0.0.1", port=port, debug=False)

@@ -5,5 +5,9 @@ __pycache__/
 *.spec
 build/
 dist/
+electron/dist/
+electron/node_modules/7zip-bin/win/x64/7za_orig.exe
+electron/node_modules/7zip-bin/win/x64/7za_wrapper.exe
 server_out.txt
 server_err.txt
+node_modules/

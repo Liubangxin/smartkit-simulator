@@ -1,9 +1,9 @@
 {
   "commands": [
     {
-      "description": "Display system general information",
       "name": "show system general",
-      "output": "System General Information\n==========================\nSystem Name: OceanStor.Storage\nHealth Status: Normal\nRunning Status: Normal\nTotal Capacity: 200.00 TB\nSN: 210235G6EHZ0C10000123\nLocation: L2\nProduct Model: OceanStor 5510\nProduct Version: V700R001C30\nPatch Version: SPC100 SPH126"
+      "description": "Display system general information",
+      "output": "System General Information\n==========================\nSystem Name: OceanStor.Storage\nHealth Status: Normal\nRunning Status: Normal\nTotal Capacity: 200.00 TB\nSN: 210235G6EHZ0C10000124\nLocation: L2\nProduct Model: OceanStor 5510\nProduct Version: V700R001C30\nPatch Version: SPC100 SPH126"
     }
   ],
   "server": {

@@ -1,9 +1,16 @@
 # SmartKit Storage Simulator
 
-SmartKit Storage Simulator 是一个本地 SSH 存储设备模拟器。它使用 Python、Flask 和 Paramiko 提供 Web 图形界面，可配置 SSH 登录信息和命令输出，用于模拟存储设备 CLI 命令返回。
+SmartKit Storage Simulator 是一个本地 SSH 存储设备模拟器。它使用 Python、Flask 和 Paramiko 提供可配置的 SSH 命令模拟，并封装为 Electron 桌面应用，可直接在 Windows 上双击 exe 运行，无需安装 Python 环境。
+
+## 快速使用（Electron 桌面版）
+
+直接双击 `SmartKit-Simulator-1.0.0.exe` 启动桌面应用。
+
+便携模式下，`config.json` 和 `host_key` 保存在 exe 同级目录，方便随身携带。
 
 ## 功能概览
 
+- **桌面应用**：Electron 封装，Windows 原生窗口，无需浏览器或 Python 环境。
 - Web GUI 管理 SSH 服务端口、用户名和密码。
 - 支持配置 SSH 服务监听地址，默认 `127.0.0.1`，也可以改为 `0.0.0.0` 允许通过本机实际 IP 访问。
 - 支持新增、删除、编辑模拟命令。
@@ -11,13 +18,76 @@ SmartKit Storage Simulator 是一个本地 SSH 存储设备模拟器。它使用
 - 命令编辑器默认只读，点击 **Edit** 后才能修改；进入编辑后按钮变为 **Cancel**。
 - 点击 **Save Command** 后保存到 `config.json`。
 - SSH 服务运行期间会读取最新命令配置。
-- 支持 Stop -> Start 重启服务，并确保旧服务停止后再启动新服务。
+- 支持 Stop → Start 重启服务，并确保旧服务停止后再启动新服务。
 - 底部日志面板可上下拖动调整高度。
 - 命令输出自动统一为 CRLF，避免 PowerShell / SSH 终端多行输出错位。
 
-## 开发环境配置
+## 构建 Electron 桌面版
 
-建议在项目根目录创建 Python 虚拟环境：
+### 前置条件
+
+- Python 3.12+（含 pip）
+- Node.js（含 npm）
+- .NET Framework 4.x（C# 编译器 `csc.exe`，Windows 自带）
+
+### 环境准备
+
+```powershell
+# 创建 Python 虚拟环境并安装依赖
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+
+# 安装 Electron 依赖
+cd electron
+npm install
+cd ..
+```
+
+如果 PowerShell 阻止执行脚本：
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+```
+
+### 一键构建
+
+```powershell
+.\build_electron.ps1
+```
+
+该脚本会自动完成：
+1. 用 PyInstaller 编译 `simulator_gui.py` → `dist/backend/simulator_gui.exe`（15.7 MB）
+2. 设置 7za 包装器（解决 winCodeSign 符号链接问题）
+3. 用 electron-builder 打包为便携版 exe → `electron/dist/SmartKit-Simulator-1.0.0.exe`（83.3 MB）
+
+### 分步构建
+
+仅构建 Python 后端 exe：
+
+```powershell
+.\build_backend.ps1
+```
+
+仅打包 Electron（需要先完成上一步）：
+
+```powershell
+cd electron
+npm run dist
+```
+
+### 构建产物
+
+```
+electron\dist\SmartKit-Simulator-1.0.0.exe   ← 双击运行
+```
+
+## 开发模式（Python 直接运行）
+
+开发调试时不需 Electron 打包，直接启动 Flask 服务即可。
+
+### 开发环境配置
 
 ```powershell
 python -m venv .venv
@@ -25,22 +95,13 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-如果 PowerShell 阻止执行脚本，可以在当前终端临时放开执行策略：
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\.venv\Scripts\Activate.ps1
-```
-
-## 启动 GUI
+### 启动 GUI
 
 推荐使用启动脚本：
 
 ```powershell
 .\start_gui.ps1
 ```
-
-`start_gui.ps1` 会优先使用项目目录下的 `.venv\Scripts\python.exe`。如果没有创建虚拟环境，会继续尝试系统中的 `python` 或 `py -3`。
 
 也可以直接运行：
 
@@ -55,6 +116,15 @@ http://127.0.0.1:5800
 ```
 
 如果 `5800` 被占用，程序会自动尝试 `5801` 到 `5899` 范围内的可用端口。
+
+### 用 Electron 开发模式运行
+
+```powershell
+cd electron
+npm start
+```
+
+此模式下 Electron 会自动查找 `.venv` 中的 Python 环境启动后端。
 
 ## 使用 GUI
 
@@ -129,18 +199,32 @@ GUI 中配置的命令输出支持以下变量，执行命令时会自动替换�
 
 ```text
 simulator/
-  simulator_gui.py        Flask Web GUI 和可配置 SSH 服务
-  index.html              GUI 页面
-  config.json             服务配置和命令输出配置
-  requirements.txt        Python 运行依赖
-  start_gui.ps1           GUI 开发启动脚本
-  server.py               CLI SSH 模拟服务
-  run.ps1                 CLI 启动脚本
-  tests/
-    test_simulator_gui.py SSH 服务端回归测试
-    test_index_html.js    前端行为测试
-    test_portability.py   启动脚本和文档检查
-  README.md
+├── simulator_gui.py         Flask Web GUI 和可配置 SSH 服务（Python 后端）
+├── index.html               GUI 前端页面
+├── config.json              服务配置和命令输出配置
+├── requirements.txt         Python 运行依赖
+├── server.py                CLI SSH 模拟服务（早期版本）
+│
+├── electron/                Electron 桌面应用
+│   ├── main.js              Electron 主进程
+│   ├── package.json         Electron 依赖和打包配置
+│   └── 7za_wrapper.cs       7za 包装器（构建时解决符号链接问题）
+│
+├── build_backend.ps1        PyInstaller 构建脚本
+├── build_electron.ps1       一键构建脚本（后端 + Electron 打包）
+├── start_gui.ps1            开发模式启动脚本
+├── run.ps1                  CLI 模式启动脚本
+│
+├── tests/
+│   ├── test_simulator_gui.py    SSH 服务端回归测试
+│   ├── test_index_html.js       前端行为测试
+│   └── test_portability.py      启动脚本和文档检查
+│
+├── dist/
+│   └── backend/
+│       └── simulator_gui.exe    PyInstaller 编译的后端 exe
+│
+└── README.md
 ```
 
 ## 测试
@@ -177,10 +261,19 @@ python -m py_compile simulator_gui.py tests/test_simulator_gui.py tests/test_por
 
 ## 依赖
 
+**运行环境（桌面版无需安装）**：
 - Python 3.12+
 - Flask >= 3.0
 - Paramiko >= 5.0
-- Node.js，仅运行前端测试时需要
+
+**构建环境**：
+- PyInstaller >= 6.0（编译 Python 后端）
+- Node.js + npm（Electron 打包）
+- .NET Framework 4.x（`csc.exe`，Windows 自带，构建 7za 包装器）
+
+**Electron 依赖**（`electron/package.json`）：
+- electron ^31.0.0
+- electron-builder ^24.13.3
 
 ## 注意事项
 
@@ -189,3 +282,5 @@ python -m py_compile simulator_gui.py tests/test_simulator_gui.py tests/test_por
 - `config.json` 中的 `server.bind_address` 控制 SSH 服务监听地址。
 - 本工具面向本地模拟测试使用，默认监听 `127.0.0.1`。
 - 如果端口被占用，GUI 日志区会显示绑定端口失败信息。
+- 便携版 exe 运行时会解压到临时目录，关闭后自动清理。
+- 便携版 exe 的配置数据保存在 exe 所在目录（`PORTABLE_EXECUTABLE_DIR`）。

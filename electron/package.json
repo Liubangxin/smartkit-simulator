@@ -1,0 +1,45 @@
+{
+  "name": "smartkit-simulator",
+  "version": "1.0.0",
+  "description": "SmartKit Storage Simulator - SSH storage device simulator",
+  "main": "main.js",
+  "author": "SmartKit",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build:backend": "powershell -ExecutionPolicy Bypass -File ../build_backend.ps1",
+    "dist": "npm run build:backend && set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ && electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.smartkit.simulator",
+    "productName": "SmartKit Simulator",
+    "directories": {
+      "output": "dist"
+    },
+    "forceCodeSigning": false,
+    "files": [
+      "main.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist/backend/simulator_gui.exe",
+        "to": "backend/simulator_gui.exe"
+      }
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "sign": null
+    },
+    "portable": {
+      "artifactName": "SmartKit-Simulator-${version}.exe"
+    }
+  }
+}

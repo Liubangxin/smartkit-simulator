@@ -1,2 +1,5 @@
 flask>=3.0
 paramiko>=5.0
+
+# Build tool (for packaging into Electron)
+pyinstaller>=6.0

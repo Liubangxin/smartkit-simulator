@@ -1,6 +1,6 @@
 # SmartKit Storage Simulator
 
-SmartKit Storage Simulator 是一个本地 SSH 存储设备模拟器。它使用 Python、Flask 和 Paramiko 提供可配置的 SSH 命令模拟，并封装为 Electron 桌面应用，可直接在 Windows 上双击 exe 运行，无需安装 Python 环境。
+SmartKit Storage Simulator 是一个本地 SSH 和 REST 接口模拟器。它使用 Python、Flask 和 Paramiko 提供可配置的 SSH 命令及 HTTP 响应模拟，并封装为 Electron 桌面应用，可直接在 Windows 上双击 exe 运行，无需安装 Python 环境。
 
 ## 快速使用（Electron 桌面版）
 
@@ -21,8 +21,17 @@ SmartKit Storage Simulator 是一个本地 SSH 存储设备模拟器。它使用
 - 支持 Stop → Start 重启服务，并确保旧服务停止后再启动新服务。
 - 底部日志面板可上下拖动调整高度。
 - 命令输出自动统一为 CRLF，避免 PowerShell / SSH 终端多行输出错位。
+- REST 服务使用独立监听地址和端口，可与 SSH 服务分别启动、停止。
+- REST 路由按 HTTP 方法和精确 URI 匹配，可配置状态码、响应头和响应体。
+- REST 路由保存后立即生效，无需重启 REST 服务。
+- SSH 命令和 REST 路由支持显式创建、重命名、删除及折叠分组；删除分组时组内项目自动移到 `Ungrouped`。
+- 选中的 SSH 命令或 REST 路由可通过 `Move` 快速移动到其他分组。
+- 创建、重命名、删除、移动及错误提示统一使用应用内弹窗。
+- 左侧列表和右侧编辑区之间的分隔线可左右拖动调整宽度。
 
 ## 构建 Electron 桌面版
+
+项目采用两级打包：先由 PyInstaller 将 Python 后端打成自包含 exe，再由 electron-builder 将 Electron 外壳和后端封装为 Windows x64 便携版单文件 exe。目标电脑不需要安装 Python、Node.js 或项目依赖。
 
 ### 前置条件
 
@@ -54,34 +63,98 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ### 一键构建
 
 ```powershell
-.\build_electron.ps1
+powershell -ExecutionPolicy Bypass -File .\build_electron.ps1
 ```
 
 该脚本会自动完成：
-1. 用 PyInstaller 编译 `simulator_gui.py` → `dist/backend/simulator_gui.exe`（15.7 MB）
-2. 设置 7za 包装器（解决 winCodeSign 符号链接问题）
-3. 用 electron-builder 打包为便携版 exe → `electron/dist/SmartKit-Simulator-1.0.0.exe`（83.3 MB）
+1. 检查 Flask、Paramiko 和 PyInstaller 依赖
+2. 用 PyInstaller 编译 `simulator_gui.py` → `dist/backend/simulator_gui.exe`（约 15.7 MB）
+3. 将 `index.html` 和默认 `config.json` 嵌入后端
+4. 设置 7za 包装器（解决 winCodeSign 符号链接问题）
+5. 用 electron-builder 打包便携版 → `electron/dist/SmartKit-Simulator-1.0.0.exe`（约 83.3 MB）
 
 ### 分步构建
 
 仅构建 Python 后端 exe：
 
 ```powershell
-.\build_backend.ps1
+powershell -ExecutionPolicy Bypass -File .\build_backend.ps1 -Clean
 ```
 
-仅打包 Electron（需要先完成上一步）：
+后端构建成功后，仅打包 Electron：
 
 ```powershell
-cd electron
-npm run dist
+powershell -ExecutionPolicy Bypass -File .\build_electron.ps1 -SkipBackend
 ```
+
+常用构建参数：
+
+| 参数 | 脚本 | 说明 |
+|---|---|---|
+| `-Clean` | 两个构建脚本 | 构建前清理旧的后端和临时产物 |
+| `-SkipBackend` | `build_electron.ps1` | 复用现有 `dist/backend/simulator_gui.exe`，只重新封装 Electron |
+| `-PythonPath <路径>` | `build_backend.ps1` | 指定用于构建后端的 Python 解释器 |
 
 ### 构建产物
 
 ```
 electron\dist\SmartKit-Simulator-1.0.0.exe   ← 双击运行
 ```
+
+中间产物位于：
+
+```text
+dist\backend\simulator_gui.exe                ← PyInstaller 后端
+electron\dist\win-unpacked\                  ← Electron 解包目录
+```
+
+构建完成后可检查文件信息和 SHA-256：
+
+```powershell
+Get-Item .\electron\dist\SmartKit-Simulator-1.0.0.exe
+Get-FileHash .\electron\dist\SmartKit-Simulator-1.0.0.exe -Algorithm SHA256
+```
+
+### 常见构建问题
+
+#### PowerShell 禁止执行脚本
+
+无需修改系统级执行策略，直接使用：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build_electron.ps1
+```
+
+#### `.venv` 中的 Python 无法启动
+
+虚拟环境可能是在另一台电脑或另一个 Python 安装路径下创建的。删除并重新创建 `.venv` 后再构建：
+
+```powershell
+Remove-Item -Recurse -Force .\.venv
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+也可以显式指定有效的 Python：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build_backend.ps1 -PythonPath "C:\Path\To\python.exe" -Clean
+powershell -ExecutionPolicy Bypass -File .\build_electron.ps1 -SkipBackend
+```
+
+#### Electron 依赖缺失
+
+如果提示找不到 `electron-builder`、`7zip-bin` 或相关目录，重新安装锁定依赖：
+
+```powershell
+Push-Location .\electron
+npm install
+Pop-Location
+```
+
+#### 构建产物被占用
+
+关闭正在运行的 SmartKit Simulator，再使用 `-Clean` 重新构建。构建脚本会删除并重建 `dist` 目录，因此不要在构建期间打开其中的 exe。
 
 ## 开发模式（Python 直接运行）
 
@@ -149,6 +222,16 @@ ssh admin@127.0.0.1 -p 2222
 ```
 
 默认用户名为 `admin`，默认密码为 `admin123`。
+
+## REST 模拟器
+
+在顶部切换到 **REST Simulator** 页签，设置监听地址和独立端口。左侧可以新增、删除和选择路由，右侧可配置 HTTP 方法、URI、状态码、响应头及响应体。相同 URI 可分别配置不同 HTTP 方法；URI 采用精确匹配，不包含查询参数。
+
+例如配置 `GET /api/device/info` 后，可通过以下命令访问：
+
+```powershell
+curl.exe -i http://127.0.0.1:8080/api/device/info
+```
 
 ### 通过实际 IP 访问
 

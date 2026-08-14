@@ -6,7 +6,8 @@ import json, os, queue, socket, sys, threading, time, datetime, random, string, 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 import paramiko
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
+from werkzeug.serving import make_server
 
 def resource_path(relative_path):
     base = getattr(sys, "_MEIPASS", BASE_DIR)
@@ -31,6 +32,9 @@ log_queue = queue.Queue()
 stop_event = threading.Event()
 server_thread = None
 server_lock = threading.Lock()
+rest_server = None
+rest_thread = None
+rest_lock = threading.Lock()
 
 DEFAULT_SERVER = {
     "bind_address": "127.0.0.1",
@@ -38,6 +42,7 @@ DEFAULT_SERVER = {
     "username": "admin",
     "password": "admin123",
 }
+DEFAULT_REST_SERVER = {"bind_address": "127.0.0.1", "port": 8080}
 
 def substitute_variables(text):
     now = datetime.datetime.now()
@@ -52,21 +57,35 @@ def format_command_output(text):
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     return "\r\n".join(text.rstrip("\n").split("\n")) + "\r\n"
 
+def normalize_groups(config):
+    for list_key, item_key in (("command_groups", "commands"), ("rest_groups", "rest_routes")):
+        groups = []
+        for name in config.get(list_key, []):
+            name = str(name).strip()
+            if name and name != "Ungrouped" and name not in groups:
+                groups.append(name)
+        for item in config.get(item_key, []):
+            name = str(item.get("group", "")).strip()
+            if name and name != "Ungrouped" and name not in groups:
+                groups.append(name)
+        config[list_key] = groups
+    return config
+
 def load_config():
-    if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    config_path = CONFIG_PATH if os.path.exists(CONFIG_PATH) else resource_path("config.json")
+    if os.path.exists(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
-            config["server"] = {**DEFAULT_SERVER, **config.get("server", {})}
-            return config
-    bundled_config = resource_path("config.json")
-    if os.path.exists(bundled_config):
-        with open(bundled_config, "r", encoding="utf-8") as f:
-            config = json.load(f)
-            config["server"] = {**DEFAULT_SERVER, **config.get("server", {})}
-            return config
-    return {"server": dict(DEFAULT_SERVER), "commands": []}
+        config["server"] = {**DEFAULT_SERVER, **config.get("server", {})}
+        config["rest_server"] = {**DEFAULT_REST_SERVER, **config.get("rest_server", {})}
+        config.setdefault("commands", [])
+        config.setdefault("rest_routes", [])
+        return normalize_groups(config)
+    return {"server": dict(DEFAULT_SERVER), "commands": [], "command_groups": [],
+            "rest_server": dict(DEFAULT_REST_SERVER), "rest_routes": [], "rest_groups": []}
 
 def save_config(config):
+    config = normalize_groups(config)
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
 
@@ -108,7 +127,7 @@ class SimulatorServer(paramiko.ServerInterface):
 
     def _handle_shell(self, channel):
         try:
-            channel.send(b"SmartKit Storage Simulator\r\nType 'help' for available commands.\r\n\r\nsmartkit:/> ")
+            channel.send(b"SmartKit Storage Simulator\r\nType 'help' for available commands.\r\n\r\nsmartkit:/>")
             buf = b""
             while not channel.closed:
                 try:
@@ -142,7 +161,7 @@ class SimulatorServer(paramiko.ServerInterface):
                             elif cmd:
                                 channel.send(f"Unknown command: {cmd}\r\n".encode())
                                 channel.send(b"Type 'help' for available commands.\r\n")
-                        channel.send(b"smartkit:/> ")
+                        channel.send(b"smartkit:/>")
                         continue
                     buf += bytes([b])
         except (EOFError, OSError):
@@ -220,6 +239,46 @@ def stop_server_thread(timeout=3.0):
     server_thread = None
     return True
 
+REST_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD")
+
+def create_rest_app():
+    rest_app = Flask("smartkit_rest_simulator")
+
+    @rest_app.route("/", defaults={"uri": ""}, methods=REST_METHODS)
+    @rest_app.route("/<path:uri>", methods=REST_METHODS)
+    def simulate_rest(uri):
+        path = "/" + uri
+        method = request.method.upper()
+        config = load_config()
+        route = next((r for r in config.get("rest_routes", [])
+                      if r.get("method", "GET").upper() == method
+                      and r.get("uri") == path), None)
+        if route is None:
+            log_queue.put(f"REST {method} {path} -> 404")
+            return Response("No simulated route configured\n", status=404,
+                            content_type="text/plain; charset=utf-8")
+        status = int(route.get("status_code", 200))
+        response = Response(route.get("response_body", ""), status=status)
+        for name, value in route.get("response_headers", {}).items():
+            response.headers[str(name)] = str(value)
+        log_queue.put(f"REST {method} {path} -> {status}")
+        return response
+
+    return rest_app
+
+def stop_rest_server_thread(timeout=3.0):
+    global rest_server, rest_thread
+    if rest_server is not None:
+        rest_server.shutdown()
+    if rest_thread and rest_thread.is_alive():
+        rest_thread.join(timeout)
+        if rest_thread.is_alive():
+            log_queue.put("[error] Previous REST server did not stop in time")
+            return False
+    rest_server = None
+    rest_thread = None
+    return True
+
 @app.route("/")
 def index():
     return open(resource_path("index.html"), encoding="utf-8").read()
@@ -232,6 +291,37 @@ def api_get_config():
 def api_save_config():
     save_config(request.get_json())
     return jsonify({"status": "ok"})
+
+@app.route("/api/rest/start", methods=["POST"])
+def api_start_rest_server():
+    global rest_server, rest_thread
+    config = load_config()
+    data = request.get_json() or {}
+    bind_address = (data.get("bind_address") or config["rest_server"]["bind_address"]).strip()
+    port = int(data.get("port", config["rest_server"]["port"]))
+    if not 1 <= port <= 65535:
+        return jsonify({"status": "error", "message": "port must be between 1 and 65535"}), 400
+    config["rest_server"] = {"bind_address": bind_address, "port": port}
+    save_config(config)
+    with rest_lock:
+        if not stop_rest_server_thread():
+            return jsonify({"status": "error", "message": "previous REST server did not stop"}), 409
+        try:
+            rest_server = make_server(bind_address, port, create_rest_app(), threaded=True)
+        except OSError as e:
+            log_queue.put(f"[error] Cannot bind REST {bind_address}:{port}: {e}")
+            return jsonify({"status": "error", "message": str(e)}), 409
+        rest_thread = threading.Thread(target=rest_server.serve_forever, daemon=True)
+        rest_thread.start()
+    log_queue.put(f"REST server listening on {bind_address}:{port}")
+    return jsonify({"status": "running", "bind_address": bind_address, "port": port})
+
+@app.route("/api/rest/stop", methods=["POST"])
+def api_stop_rest_server():
+    with rest_lock:
+        stop_rest_server_thread()
+    log_queue.put("REST server stopped")
+    return jsonify({"status": "stopped"})
 
 @app.route("/api/server/start", methods=["POST"])
 def api_start_server():
@@ -288,7 +378,6 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 def run_headless():
-    from werkzeug.serving import make_server
     server = make_server("127.0.0.1", 0, app, threaded=True)
     print(f"SMARTKIT_READY_PORT={server.server_port}", flush=True)
     server.serve_forever()

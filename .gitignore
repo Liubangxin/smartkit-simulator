@@ -11,3 +11,4 @@ electron/node_modules/7zip-bin/win/x64/7za_wrapper.exe
 server_out.txt
 server_err.txt
 node_modules/
+.agents

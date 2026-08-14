@@ -74,7 +74,7 @@ def handle_shell(channel):
     try:
         channel.send(b"SmartKit Storage Simulator v2.3.1 (echo+bs)\r\n")
         channel.send(b"Type 'help' for available commands.\r\n\r\n")
-        channel.send(b"smartkit:/> ")
+        channel.send(b"smartkit:/>")
         buf = b""
         while not channel.closed:
             try:
@@ -113,7 +113,7 @@ def handle_shell(channel):
                     elif cmd:
                         channel.send(f"Unknown command: {cmd}\r\n".encode("utf-8"))
                         channel.send(b"Type 'help' for available commands.\r\n")
-                    channel.send(b"smartkit:/> ")
+                    channel.send(b"smartkit:/>")
                     continue
                 # Normal character
                 buf += bytes([b])

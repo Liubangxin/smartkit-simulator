@@ -1,14 +1,67 @@
 {
+  "command_groups": [],
   "commands": [
     {
-      "name": "show system general",
       "description": "Display system general information",
-      "output": "System General Information\n==========================\nSystem Name: OceanStor.Storage\nHealth Status: Normal\nRunning Status: Normal\nTotal Capacity: 200.00 TB\nSN: 210235G6EHZ0C10000124\nLocation: L2\nProduct Model: OceanStor 5510\nProduct Version: V700R001C30\nPatch Version: SPC100 SPH126"
+      "name": "show system general",
+      "output": "System Name         : OceanStor_24A.Storage \nHealth Status       : Normal \nRunning Status      : Normal \nTotal Capacity      : 3.186TB \nSN                  : 210235G6EHZ0CX000011\nLocation            : \nProduct Model       : OceanStor 5510 \nProduct Version     : VX00R00XC11 Kunpeng\nHigh Water Level(%) : 80 \nLow Water Level(%)  : 30 \nWWN                 : XXXX \nTime                : 2015-07-07/15:34:05 UTC+08:00\nPatch Version       : SPC010 SPH010\nDescription         :"
     }
   ],
+  "rest_groups": [
+    "OceanStor Pacific iBMC"
+  ],
+  "rest_routes": [
+    {
+      "method": "GET",
+      "response_body": "{\n  \"a\": \"1\"\n}",
+      "response_headers": {},
+      "status_code": 200,
+      "uri": "/api/device/info"
+    },
+    {
+      "group": "OceanStor Pacific iBMC",
+      "method": "POST",
+      "response_body": "{\n    \"@odata.context\": \"/redfish/v1/$metadata#Session.Session\",\n    \"@odata.id\": \"/redfish/v1/SessionService/Sessions/461360e420ee911d\",\n    \"@odata.type\": \"#Session.v1_0_2.Session\",\n    \"Id\": \"461360e420ee911d\",\n    \"Name\": \"User Session\",\n    \"ClientOriginIPAddress\": \"10.10.10.1\",\n    \"CreatedTime\": \"2017-08-05T14:28:18+00:00\",\n    \"Roles\": [\"Administrator\"],\n    \"SessionType\": \"Redfish\",\n    \"OemSessionType\": \"Redfish\",\n    \"Oem\": {\n        \"Huawei\": {\n            \"UserAccount\": \"test1\",\n            \"LoginTime\": \"2017-08-05T14:28:18+00:00\",\n            \"UserIP\": \"10.10.10.1\",\n            \"UserTag\": \"Redfish\",\n            \"MySession\": false,\n            \"UserId\": 4,\n            \"UserValidDays\": null,\n            \"AccountInsecurePromptEnabled\": false,\n            \"UserRole\": [\"Administrator\"]\n        }\n    }\n}",
+      "response_headers": {},
+      "status_code": 200,
+      "uri": "/redfish/v1/SessionService/Sessions"
+    },
+    {
+      "method": "GET",
+      "response_body": "{\n  \"@odata.context\": \"/redfish/v1/$metadata#ChassisCollection\",\n  \"@odata.id\": \"/redfish/v1/Chassis\",\n  \"@odata.type\": \"#ChassisCollection.ChassisCollection\",\n  \"Name\": \"Chassis Collection\",\n  \"Members@odata.count\": 1,\n  \"Members\": [\n    {\n      \"@odata.id\": \"/redfish/v1/Chassis/1\"\n    }\n  ]\n}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "status_code": 200,
+      "uri": "/redfish/v1/Chassis"
+    },
+    {
+      "method": "GET",
+      "response_body": "{\n  \"@odata.context\": \"/redfish/v1/$metadata#AccountService.AccountService\",\n  \"@odata.id\": \"/redfish/v1/AccountService\",\n  \"@odata.type\": \"#AccountService.v1_15_1.AccountService\",\n  \"Id\": \"AccountService\",\n  \"Name\": \"Account Service\",\n  \"MinPasswordLength\": 8,\n  \"MaxPasswordLength\": 20,\n  \"AccountLockoutThreshold\": 5,\n  \"AccountLockoutDuration\": 300,\n  \"PasswordExpirationDays\": null,\n  \"AccountLockoutCounterResetAfter\": 300,\n  \"AuthFailureLoggingThreshold\": 1,\n  \"HTTPBasicAuth\": \"Enabled\",\n  \"LocalAccountAuth\": \"LoalFirst\",\n  \"ServiceEnabled\": true,\n  \"RequireChangePasswordAction\": false, \n  \"Status\": {\n    \"State\": \"Enabled\",\n    \"Health\": \"OK\"\n  },\n  \"Oem\": {\n    \"Public\": {\n      \"TlsVersion\": [\"Tls1.2\",\"Tls1.3\"],\n      \"OSUserManagementEnabled\": true,\n      \"OSAdministratorPrivilegeEnabled\": true,\n      \"PasswordValidityDays\": null,\n      \"MinimumPasswordAgeDays\": null,\n      \"UsernamePasswordCompareInfo\": {\n        \"UsernamePasswordCompareEnabled\": false,\n        \"UsernamePasswordCompareLength\": 4\n      },\n      \"PreviousPasswordsDisallowedCount\": null,\n      \"SecurityBannerEnabled\": true,\n      \"SecurityBanner\": \"information\",\n      \"DefaultSecurityBanner\": \"WARNING! This system is PRIVATE and PROPRIETARY and may only be accessed by authorized users. Unauthorized use of the system is prohibited. The owner, or its agents, may monitor any activity or communication on the system. The owner, or its agents, may retrieve any information stored within the system. By accessing and using the system, you are consenting to such monitoring and information retrieval for law enforcement and other purposes.\",\n      \"AccountInactiveTimelimit \": 0,\n      \"CLISessionTimeoutMinutes\": 5,\n      \"PasswordComplexityCheckEnabled\": true,\n      \"SSHPasswordAuthenticationEnabled\": true,\n      \"CertificateOverdueWarningTime\": 90,\n      \"EmergencyLoginUser\": \"\",\n      \"TwoFactorAuthenticationInformation\": {\n        \"RootCertificate\": [\n          {\n            \"CertId\": 1,\n            \"IssueBy\": \"CN=xxx, OU=IT, O=xxx, L=ShenZhen, S=GuangDong, C=CN\",\n            \"IssueTo\": \"CN=xxx, OU=IT, O=xxx, L=ShenZhen, S=GuangDong, C=CN\",\n            \"ValidFrom\": \"Jan 07 2017 GMT\",\n            \"ValidTo\": \"Jan 05 2027 GMT\",\n            \"SerialNumber\": \"e8 ff d7 e0 21 a3 01 96 \",\n            \"IsImportCrl\": false,\n            \"SignatureAlgorithm\": \"sha256WithRSAEncryption\",\n            \"KeyUsage\": \"Certificate Signing, CRL Sign\",\n            \"PublicKeyLengthBits\": 2048,\n            \"CrlValidFrom\":  null,\n            \"CrlValidTo\":  null\n          }\n        ]\n      },\n      \"SystemLockDownEnabled\": false,\n      \"InitialAccountPrivilegeRestrictEnabled\": false,\n      \"PasswordRulePolicy\": \"Default\",\n      \"PasswordPattern\": \"\",\n      \"InterChassisAuthentication\": {\n          \"Enabled\": false,\n          \"AccessRole\": \"Administrator\"\n      },\n      \"Actions\": {\n        \"#AccountService.ImportRootCertificate\": {\n          \"target\": \"/redfish/v1/AccountService/Oem/Public/Actions/AccountService.ImportRootCertificate\",\n          \"@Redfish.ActionInfo\": \"/redfish/v1/AccountService/ImportRootCertificateActionInfo\"\n        },\n        \"#AccountService.DeleteRootCertificate\": {\n          \"target\": \"/redfish/v1/AccountService/Oem/Public/Actions/AccountService.DeleteRootCertificate\",\n          \"@Redfish.ActionInfo\": \"/redfish/v1/AccountService/DeleteRootCertificateActionInfo\"\n        },\n       \"#AccountService.ImportCrl\": { \n          \"target\": \"/redfish/v1/AccountService/Oem/Public/Actions/AccountService.ImportCrl\", \n          \"@Redfish.ActionInfo\": \"/redfish/v1/AccountService/ImportCrlActionInfo\" \n        },\n       \"#AccountService.DeleteCrl\": {\n          \"target\": \"/redfish/v1/AccountService/Oem/Public/Actions/AccountService.DeleteCrl\",\n          \"@Redfish.ActionInfo\": \"/redfish/v1/AccountService/DeleteCrlActionInfo\"\n        }\n},\n      \"LdapService\": {\n        \"@odata.id\": \"/redfish/v1/AccountService/LdapService\"\n      },\n      \"KerberosService\": {\n        \"@odata.id\": \"/redfish/v1/AccountService/KerberosService\"\n      }\n    }\n  },\n  \"Accounts\": {\n    \"@odata.id\": \"/redfish/v1/AccountService/Accounts\"\n  },\n  \"LDAP\": {\n    \"ServiceEnabled\": true,\n    \"ServiceAddresses\": [\n      \"127.0.0.1\"\n    ],\n    \"Authentication\": {\n      \"AuthenticationType\": \"UsernameAndPassword\"\n    },\n    \"Certificates\": {\n      \"@odata.id\": \"/redfish/v1/Managers/1/Certificates\"\n    },\n    \"LDAPService\": {\n      \"SearchSettings\": {\n        \"BaseDistinguishedNames\": [\n          \"dc=bmc,dc=test,dc=com\"\n        ]\n      }\n    },\n    \"RemoteRoleMapping\": [\n      {\n        \"LocalRole\": \"Administrator\",\n        \"RemoteGroup\": \"CN=GroupName,OU=Folder\"\n      },\n      {\n        \"LocalRole\": null,\n        \"RemoteGroup\": null\n      },\n      {\n        \"LocalRole\": null,\n        \"RemoteGroup\": null\n      },\n      {\n        \"LocalRole\": null,\n        \"RemoteGroup\": null\n      },\n      {\n        \"LocalRole\": null,\n        \"RemoteGroup\": null\n      }\n    ]\n  },\n  \"Roles\": {\n    \"@odata.id\": \"/redfish/v1/AccountService/Roles\"\n  },\n  \"PrivilegeMap\": {\n    \"@odata.id\": \"/redfish/v1/AccountService/PrivilegeMap\"\n  }\n}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "status_code": 200,
+      "uri": "/redfish/v1/AccountService"
+    },
+    {
+      "group": "OceanStor Pacific iBMC",
+      "method": "GET",
+      "response_body": "{\n  \"@odata.context\": \"/redfish/v1/$metadata#SystemOverview\",\n  \"@odata.id\": \"/redfish/v1/SystemOverview\",\n  \"@odata.type\": \"#SystemOverview.SystemOverview\",\n  \"Managers\": [\n    {\n      \"Id\": \"1\",\n      \"HostName\": \"huawei\",\n      \"FirmwareVersion\": \"3.70\",\n      \"UUID\": \"AD213176-0015-9639-B211-D21DEA377B41\",\n      \"VGAUSBDVDEnabled\": null,\n      \"SystemLockDownEnabled\": false,\n      \"FusionPartition\": null,\n      \"RemoteBMCIPv4Address\": null,\n      \"PermanentMACAddress\": null,\n      \"DefaultIPv4Info\": {\n        \"IPMode\": \"Static\",\n        \"IPv4Address\": \"192.168.2.100\"\n      },\n      \"DomainName\": \"\",\n      \"DeviceIPv4\": \"192.168.2.100\",\n      \"DeviceIPv6\": \"2001::8008\",\n      \"LicenseService\": {\n        \"@odata.id\": \"/redfish/v1/Managers/1/LicenseService\"\n      },\n      \"FDMService\": {\n        \"@odata.id\": \"/redfish/v1/Managers/1/FDMService\"\n      },\n      \"USBMgmtService\": {\n        \"@odata.id\": \"/redfish/v1/Managers/1/USBMgmtService\"\n      },\n      \"WirelessService\": {\n        \"@odata.id\": \"/redfish/v1/Managers/1/WirelessService\"\n      },\n      \"DateTime\": \"2020-01-15T21:29:40+02:00\",\n      \"Platform\": \"X86\"\n    }\n  ],\n  \"Systems\": [\n    {\n      \"Id\": \"1\",\n      \"BiosVersion\": \"6.83\",\n      \"TeeosVersion\": \"1.1.0\",\n      \"OSVersion\": null,\n      \"KernalVersion\": null,\n      \"ProductAlias\": \"5288 V5 10GE BASE-T\",\n      \"ProductPicture\": \"img_01\",\n      \"SystemSerialNumber\": null,\n      \"ProductName\": null,\n      \"CPUUsagePercent\": 2,\n      \"CPUThresholdPercent\": 100,\n      \"MemoryUsagePercent\": 0,\n      \"MemoryThresholdPercent\": 100,\n      \"HardDiskThresholdPercent\": 100,\n      \"MemoryCount\": 1,\n      \"SmsEnabled\": true,\n      \"LogicalDriveSummary\": {\n        \"Count\": 0,\n        \"Status\": null\n      },\n      \"StorageSummary\": {\n        \"Count\": 1,\n        \"Status\": {\n          \"Severity\": \"Major\",\n          \"HealthRollup\": \"Warning\"\n        }\n      },\n      \"HealthSummary\": {\n        \"CriticalAlarmCount\": 0,\n        \"MajorAlarmCount\": 1,\n        \"MinorAlarmCount\": 3\n      },\n      \"ProcessorSummary\": {\n        \"Count\": 0,\n        \"Model\": null,\n        \"Status\": {\n          \"Oem\": {\n            \"Huawei\": {\n              \"Severity\": \"Informational\"\n            }\n          },\n          \"HealthRollup\": \"OK\"\n        }\n      },\n      \"MemorySummary\": {\n        \"TotalSystemMemoryGiB\": 16,\n        \"Status\": {\n          \"Oem\": {\n            \"Huawei\": {\n              \"Severity\": \"Informational\"\n            }\n          },\n          \"HealthRollup\": \"OK\"\n        }\n      },\n      \"PartitionLists\": [],\n      \"PowerState\": \"On\",\n      \"iBMARunningStatus\": null\n    }\n  ],\n  \"Chassis\": [\n    {\n      \"Id\": \"1\",\n      \"IndicatorLED\": \"Off\",\n      \"InletTemperature\": 30,\n      \"InletTempMinorAlarmThreshold\": 46,\n      \"InletTempMajorAlarmThreshold\": 48,\n      \"PresentFanNum\": 4,\n      \"Power\": {\n        \"PowerConsumedWatts\": 336,\n        \"PowerCapacityWatts\": 2050,\n        \"PresentPSUNum\": 2,\n        \"HighPowerThresholdWatts\": 60\n      },\n      \"Battery\": {},\n      \"DriveSummary\": {\n        \"Count\": 13,\n        \"Status\": {\n          \"Severity\": \"Major\",\n          \"HealthRollup\": \"Warning\"\n        }\n      },\n      \"NetworkAdaptersSummary\": {\n        \"Count\": 1,\n        \"Status\": {\n          \"Severity\": \"Informational\",\n          \"HealthRollup\": \"OK\"\n        }\n      },\n      \"PowerSupplySummary\": {\n        \"Count\": 2,\n        \"Status\": {\n          \"Severity\": \"Informational\",\n          \"HealthRollup\": \"OK\"\n        }\n      },\n      \"FanSummary\": {\n        \"Count\": 4,\n        \"Status\": {\n          \"Severity\": \"Informational\",\n          \"HealthRollup\": \"OK\"\n        }\n      },\n      \"DeviceMaxNum\": {\n        \"MemoryNum\": 24,\n        \"PCIeNum\": 2,\n        \"CPUNum\": 2,\n        \"DiskNum\": 41,\n        \"PowerSupplyNum\": 2,\n        \"FanNum\": 4,\n        \"MezzCardNum\": 0,\n        \"SDCardNum\": 0,\n        \"SDContollerNum\": 0,\n        \"SecurityModuleNum\": 1,\n        \"BackupBatteryUnitNum\": 0,\n        \"OCPNum\": 1,\n        \"NPUNum\": 1\n      }\n    }\n  ]\n}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
+      "status_code": 200,
+      "uri": "/redfish/v1/SystemOverview"
+    }
+  ],
+  "rest_server": {
+    "bind_address": "127.0.0.1",
+    "port": 8080
+  },
   "server": {
     "bind_address": "0.0.0.0",
-    "port": 2222,
+    "port": 22,
     "username": "admin",
     "password": "admin123"
   }

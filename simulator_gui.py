@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """SmartKit Storage Simulator - Web GUI (Flask)"""
 
-import json, os, queue, socket, sys, threading, time, datetime, random, string, webbrowser
+import json, os, queue, socket, ssl, sys, threading, time, datetime, random, string, webbrowser, ipaddress, http.client, urllib.parse, re
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 import paramiko
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 from flask import Flask, request, jsonify, Response
 from werkzeug.serving import make_server
 
@@ -19,14 +23,18 @@ def writable_path(relative_path):
     return os.path.join(DATA_DIR, relative_path)
 
 def set_data_dir(path):
-    global DATA_DIR, CONFIG_PATH, HOST_KEY_PATH
+    global DATA_DIR, CONFIG_PATH, HOST_KEY_PATH, REST_CERT_PATH, REST_KEY_PATH
     DATA_DIR = os.path.abspath(path)
     os.makedirs(DATA_DIR, exist_ok=True)
     CONFIG_PATH = writable_path("config.json")
     HOST_KEY_PATH = os.path.join(DATA_DIR, "host_key")
+    REST_CERT_PATH = os.path.join(DATA_DIR, "rest_cert.pem")
+    REST_KEY_PATH = os.path.join(DATA_DIR, "rest_key.pem")
 
 CONFIG_PATH = writable_path("config.json")
 HOST_KEY_PATH = os.path.join(DATA_DIR, "host_key")
+REST_CERT_PATH = os.path.join(DATA_DIR, "rest_cert.pem")
+REST_KEY_PATH = os.path.join(DATA_DIR, "rest_key.pem")
 app = Flask(__name__)
 log_queue = queue.Queue()
 stop_event = threading.Event()
@@ -43,6 +51,51 @@ DEFAULT_SERVER = {
     "password": "admin123",
 }
 DEFAULT_REST_SERVER = {"bind_address": "127.0.0.1", "port": 8080}
+
+def local_ipv4_addresses():
+    addresses = []
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET, socket.SOCK_STREAM):
+            address = info[4][0]
+            if not address.startswith("127.") and address not in addresses:
+                addresses.append(address)
+    except OSError:
+        pass
+    return addresses
+
+def ensure_rest_certificate():
+    if os.path.exists(REST_CERT_PATH) and os.path.exists(REST_KEY_PATH):
+        return
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = issuer = x509.Name([
+        x509.NameAttribute(NameOID.COMMON_NAME, "SmartKit REST Simulator"),
+    ])
+    san_entries = [x509.DNSName("localhost"), x509.DNSName(socket.gethostname()),
+                   x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]
+    san_entries.extend(x509.IPAddress(ipaddress.ip_address(address))
+                       for address in local_ipv4_addresses())
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = (x509.CertificateBuilder()
+            .subject_name(subject).issuer_name(issuer).public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - datetime.timedelta(minutes=1))
+            .not_valid_after(now + datetime.timedelta(days=3650))
+            .add_extension(x509.SubjectAlternativeName(san_entries), critical=False)
+            .sign(key, hashes.SHA256()))
+    with open(REST_KEY_PATH, "wb") as f:
+        f.write(key.private_bytes(serialization.Encoding.PEM,
+                                  serialization.PrivateFormat.PKCS8,
+                                  serialization.NoEncryption()))
+    with open(REST_CERT_PATH, "wb") as f:
+        f.write(cert.public_bytes(serialization.Encoding.PEM))
+
+def create_rest_tls_context():
+    ensure_rest_certificate()
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.maximum_version = ssl.TLSVersion.TLSv1_3
+    context.load_cert_chain(REST_CERT_PATH, REST_KEY_PATH)
+    return context
 
 def substitute_variables(text):
     now = datetime.datetime.now()
@@ -240,6 +293,38 @@ def stop_server_thread(timeout=3.0):
     return True
 
 REST_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD")
+REST_PATH_PARAM = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+def match_rest_route(method, path, routes):
+    candidates = [route for route in routes if route.get("method", "GET").upper() == method]
+    for route in candidates:
+        if route.get("uri") == path:
+            return route, {}
+    for route in candidates:
+        template = route.get("uri", "")
+        names = []
+        cursor = 0
+        pattern = "^"
+        for match in REST_PATH_PARAM.finditer(template):
+            name = match.group(1)
+            if name in names:
+                pattern = ""
+                break
+            names.append(name)
+            pattern += re.escape(template[cursor:match.start()]) + f"(?P<{name}>[^/]+)"
+            cursor = match.end()
+        if not names or not pattern:
+            continue
+        pattern += re.escape(template[cursor:]) + "$"
+        matched = re.match(pattern, path)
+        if matched:
+            return route, {name: urllib.parse.unquote(value) for name, value in matched.groupdict().items()}
+    return None, {}
+
+def substitute_path_parameters(text, parameters):
+    for name, value in parameters.items():
+        text = text.replace("{" + name + "}", value)
+    return text
 
 def create_rest_app():
     rest_app = Flask("smartkit_rest_simulator")
@@ -250,17 +335,15 @@ def create_rest_app():
         path = "/" + uri
         method = request.method.upper()
         config = load_config()
-        route = next((r for r in config.get("rest_routes", [])
-                      if r.get("method", "GET").upper() == method
-                      and r.get("uri") == path), None)
+        route, path_parameters = match_rest_route(method, path, config.get("rest_routes", []))
         if route is None:
             log_queue.put(f"REST {method} {path} -> 404")
             return Response("No simulated route configured\n", status=404,
                             content_type="text/plain; charset=utf-8")
         status = int(route.get("status_code", 200))
-        response = Response(route.get("response_body", ""), status=status)
+        response = Response(substitute_path_parameters(route.get("response_body", ""), path_parameters), status=status)
         for name, value in route.get("response_headers", {}).items():
-            response.headers[str(name)] = str(value)
+            response.headers[str(name)] = substitute_path_parameters(str(value), path_parameters)
         log_queue.put(f"REST {method} {path} -> {status}")
         return response
 
@@ -307,14 +390,18 @@ def api_start_rest_server():
         if not stop_rest_server_thread():
             return jsonify({"status": "error", "message": "previous REST server did not stop"}), 409
         try:
-            rest_server = make_server(bind_address, port, create_rest_app(), threaded=True)
-        except OSError as e:
+            rest_server = make_server(bind_address, port, create_rest_app(), threaded=True,
+                                      ssl_context=create_rest_tls_context())
+        except (OSError, ssl.SSLError) as e:
             log_queue.put(f"[error] Cannot bind REST {bind_address}:{port}: {e}")
             return jsonify({"status": "error", "message": str(e)}), 409
         rest_thread = threading.Thread(target=rest_server.serve_forever, daemon=True)
         rest_thread.start()
-    log_queue.put(f"REST server listening on {bind_address}:{port}")
-    return jsonify({"status": "running", "bind_address": bind_address, "port": port})
+    log_queue.put(f"REST TLS 1.2/1.3 server listening on {bind_address}:{port}")
+    access_addresses = local_ipv4_addresses() if bind_address == "0.0.0.0" else [bind_address]
+    return jsonify({"status": "running", "bind_address": bind_address, "port": port,
+                    "tls_versions": ["TLSv1.2", "TLSv1.3"],
+                    "access_urls": [f"https://{address}:{port}" for address in access_addresses]})
 
 @app.route("/api/rest/stop", methods=["POST"])
 def api_stop_rest_server():
@@ -322,6 +409,51 @@ def api_stop_rest_server():
         stop_rest_server_thread()
     log_queue.put("REST server stopped")
     return jsonify({"status": "stopped"})
+
+@app.route("/api/rest/test", methods=["POST"])
+def api_test_rest_request():
+    data = request.get_json() or {}
+    method = str(data.get("method", "GET")).upper()
+    url = str(data.get("url", "")).strip()
+    headers = data.get("headers") or {}
+    body = data.get("body", "")
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return jsonify({"status": "error", "message": "URL must use http:// or https://"}), 400
+    if not isinstance(headers, dict):
+        return jsonify({"status": "error", "message": "headers must be an object"}), 400
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    target = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
+    started = time.perf_counter()
+    connection = None
+    try:
+        if parsed.scheme == "https":
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            context.maximum_version = ssl.TLSVersion.TLSv1_3
+            connection = http.client.HTTPSConnection(parsed.hostname, port, timeout=10, context=context)
+        else:
+            connection = http.client.HTTPConnection(parsed.hostname, port, timeout=10)
+        payload = body.encode("utf-8") if isinstance(body, str) else body
+        connection.request(method, target, body=payload, headers={str(k): str(v) for k, v in headers.items()})
+        tls_version = connection.sock.version() if parsed.scheme == "https" and connection.sock else None
+        response = connection.getresponse()
+        response_body = response.read().decode("utf-8", errors="replace")
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+        log_queue.put(f"REST test {method} {url} -> {response.status} ({elapsed_ms} ms)")
+        return jsonify({"status": "ok", "status_code": response.status, "reason": response.reason,
+                        "elapsed_ms": elapsed_ms, "tls_version": tls_version,
+                        "response_headers": response.getheaders(), "response_body": response_body,
+                        "request_url": url})
+    except (OSError, ssl.SSLError, http.client.HTTPException, ValueError) as e:
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
+        log_queue.put(f"[error] REST test {method} {url}: {e}")
+        return jsonify({"status": "error", "message": str(e), "elapsed_ms": elapsed_ms}), 502
+    finally:
+        if connection is not None:
+            connection.close()
 
 @app.route("/api/server/start", methods=["POST"])
 def api_start_server():

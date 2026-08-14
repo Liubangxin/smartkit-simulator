@@ -39,9 +39,15 @@ const context = {
     },
   },
   window: { innerHeight: 600, addEventListener() {} },
+  navigator: { clipboard: { writeText(text) { context.clipboardText = text; return Promise.resolve(); } } },
+  clipboardText: "",
   fetch(url, options) {
     context.fetchCalls.push({ url, options });
-    return Promise.resolve({ json: () => Promise.resolve({ server: {}, commands: [] }) });
+    if (url === "/api/rest/test") return Promise.resolve({ ok: true, json: () => Promise.resolve({
+      status: "ok", status_code: 201, reason: "Created", elapsed_ms: 12.5, tls_version: "TLSv1.3",
+      response_headers: [["Content-Type", "application/json"]], response_body: "{\"ok\":true}"
+    }) });
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ server: {}, commands: [] }) });
   },
   fetchCalls: [],
   promptValue: null,
@@ -101,6 +107,9 @@ assert.deepStrictEqual(
   ["Empty", "System"]
 );
 assert.strictEqual(context.groupNameExists(["System"], " system "), true);
+assert.strictEqual(context.validRouteUri("/redfish/v1/Sessions/{session_id}"), true);
+assert.strictEqual(context.validRouteUri("/redfish/v1/Sessions/{session_id}/{session_id}"), false);
+assert.strictEqual(context.validRouteUri("/redfish/v1/Sessions/{bad-name}"), false);
 
 elements.cmdOutput.value = "changed but cancelled";
 context.toggleEdit();
@@ -127,6 +136,8 @@ context.startServer().then(() => {
   const startCall = context.fetchCalls.find((call) => call.url === "/api/server/start");
   assert.ok(startCall);
   assert.strictEqual(JSON.parse(startCall.options.body).bind_address, "0.0.0.0");
+  assert.strictEqual(elements.sshServerToggle.textContent, "Stop Server");
+  assert.strictEqual(elements.sshServerToggle.className, "btn-stop");
   vm.runInContext("selectedCommandGroup = null; selectedIdx = -1", context);
   elements.cmdGroup.value = "System";
   context.modalValue = "Hardware";
@@ -152,6 +163,34 @@ context.startServer().then(() => {
   return context.moveItem("rest");
 }).then(() => {
   assert.strictEqual(vm.runInContext("config.rest_routes[0].group", context), "");
+  element("restBindAddress").value = "0.0.0.0";
+  element("restPort").value = "8080";
+  vm.runInContext("restRunning = true", context);
+  return context.openApiTester();
+}).then(() => {
+  assert.strictEqual(elements.testerMethod.value, "GET");
+  assert.strictEqual(elements.testerUrl.value, "https://127.0.0.1:8080/device");
+  assert.strictEqual(JSON.stringify(context.parseTesterHeaders("Content-Type: application/json\nX-Test: yes")), '{"Content-Type":"application/json","X-Test":"yes"}');
+  elements.testerMethod.value = "POST";
+  elements.testerHeaders.value = "Content-Type: application/json\nX-Test: yes";
+  elements.testerBody.value = '{"name":"O\'Brien"}';
+  return context.copyTesterCurl();
+}).then(() => {
+  assert.ok(context.clipboardText.includes("curl.exe -k -X POST 'https://127.0.0.1:8080/device'"));
+  assert.ok(context.clipboardText.includes("-H 'Content-Type: application/json'"));
+  assert.ok(context.clipboardText.includes("--data-raw '{\"name\":\"O''Brien\"}'"));
+  return context.sendApiTest();
+}).then(() => {
+  assert.strictEqual(elements.testerResponseBody.textContent, '{"ok":true}');
+  assert.ok(elements.testerResponseSummary.innerHTML.includes("TLSv1.3"));
+  return context.toggleSshServer();
+}).then(() => {
+  assert.strictEqual(elements.sshServerToggle.textContent, "Start Server");
+  assert.strictEqual(elements.sshServerToggle.className, "btn-start");
+  return context.toggleRestServer();
+}).then(() => {
+  assert.strictEqual(elements.restServerToggle.textContent, "Start REST");
+  assert.strictEqual(elements.restServerToggle.className, "btn-start");
   console.log("index.html command editor tests passed");
 }).catch((error) => {
   console.error(error);

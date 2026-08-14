@@ -22,8 +22,12 @@ SmartKit Storage Simulator 是一个本地 SSH 和 REST 接口模拟器。它使
 - 底部日志面板可上下拖动调整高度。
 - 命令输出自动统一为 CRLF，避免 PowerShell / SSH 终端多行输出错位。
 - REST 服务使用独立监听地址和端口，可与 SSH 服务分别启动、停止。
+- SSH 和 REST 都使用单一状态按钮启停服务，运行后按钮自动切换为停止操作。
+- REST 服务使用 HTTPS，支持 TLS 1.2 和 TLS 1.3，首次启动时自动生成本地自签名证书。
 - REST 路由按 HTTP 方法和精确 URI 匹配，可配置状态码、响应头和响应体。
+- REST URI 支持 `{session_id}` 形式的命名路径参数，并可在响应头和响应体中引用参数值。
 - REST 路由保存后立即生效，无需重启 REST 服务。
+- REST 路由编辑器提供内置 API Tester，可直接发送请求并查看状态码、耗时、TLS 版本、响应头和响应体。
 - SSH 命令和 REST 路由支持显式创建、重命名、删除及折叠分组；删除分组时组内项目自动移到 `Ungrouped`。
 - 选中的 SSH 命令或 REST 路由可通过 `Move` 快速移动到其他分组。
 - 创建、重命名、删除、移动及错误提示统一使用应用内弹窗。
@@ -225,13 +229,33 @@ ssh admin@127.0.0.1 -p 2222
 
 ## REST 模拟器
 
-在顶部切换到 **REST Simulator** 页签，设置监听地址和独立端口。左侧可以新增、删除和选择路由，右侧可配置 HTTP 方法、URI、状态码、响应头及响应体。相同 URI 可分别配置不同 HTTP 方法；URI 采用精确匹配，不包含查询参数。
+在顶部切换到 **REST Simulator** 页签，设置监听地址和独立端口。左侧可以新增、删除和选择路由，右侧可配置 HTTP 方法、URI、状态码、响应头及响应体。相同 URI 可分别配置不同 HTTP 方法；固定 URI 采用精确匹配，也可使用命名路径参数，路由配置不包含查询参数。
+
+URI 可以使用命名路径参数，例如：
+
+```text
+/redfish/v1/SessionService/Sessions/{session_id}
+```
+
+`{session_id}` 匹配一个路径段。请求 `/redfish/v1/SessionService/Sessions/abc-123` 时，可以在响应头或响应体中使用 `{session_id}`，程序会将其替换为 `abc-123`。当固定 URI 和参数化 URI 都能匹配时，固定 URI 优先。
+
+启动 REST 服务并选择路由后，可以点击 **Save Route** 旁边的 **Test** 打开 API Tester。测试器会自动带入当前方法、HTTPS 地址、请求头和请求体；发送后展示响应状态、耗时、协商的 TLS 版本、响应头和响应体。测试器通过本地后端发起请求，会自动接受模拟器生成的自签名证书。点击 **Copy cURL** 可复制与当前测试请求对应的 PowerShell `curl.exe` 命令。
 
 例如配置 `GET /api/device/info` 后，可通过以下命令访问：
 
 ```powershell
-curl.exe -i http://127.0.0.1:8080/api/device/info
+curl.exe -k -i https://127.0.0.1:8080/api/device/info
 ```
+
+如需通过本机真实 IP（例如 `100.125.99.27`）从其他机器访问，可在 REST 页签将 Bind 设置为 `0.0.0.0` 后启动服务。日志区会列出检测到的真实 IP 访问地址：
+
+```powershell
+curl.exe -k -i https://100.125.99.27:8080/api/device/info
+```
+
+也可以直接在 Bind 中填写指定网卡 IP，只监听该地址。如果其他机器无法连接，请确认该 IP 属于当前机器，并在 Windows 防火墙中允许 REST 端口的入站访问。
+
+REST 服务最低支持 TLS 1.2、最高支持 TLS 1.3，不接受 TLS 1.1 及更早版本。首次启动会在数据目录生成 `rest_cert.pem` 和 `rest_key.pem`。默认是自签名证书，因此 `curl` 示例使用 `-k` 跳过证书信任校验；正式联调时也可以将 `rest_cert.pem` 导入客户端信任库。
 
 ### 通过实际 IP 访问
 

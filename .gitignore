@@ -1,14 +1,17 @@
 host_key
+rest_cert.pem
+rest_key.pem
 .venv/
 __pycache__/
 *.pyc
 *.spec
 build/
 dist/
+
+# Electron dependencies and generated packages
+electron/node_modules/
 electron/dist/
-electron/node_modules/7zip-bin/win/x64/7za_orig.exe
-electron/node_modules/7zip-bin/win/x64/7za_wrapper.exe
+
 server_out.txt
 server_err.txt
-node_modules/
 .agents

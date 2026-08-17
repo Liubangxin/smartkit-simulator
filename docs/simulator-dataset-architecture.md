@@ -152,7 +152,7 @@ flowchart LR
 | 执行快照与租约模块 | 按用例激活、查询状态、释放 | 绑定解析、快照复制、并发互斥、超时接管、错误回滚 |
 | SSH 模拟适配器 | 标准 SSH 协议 | 从活动快照读取认证与命令响应 |
 | REST 模拟适配器 | 标准 HTTPS 协议 | 从活动快照匹配方法、URI、参数和响应 |
-| E2E 生命周期适配器 | `activate(case_id)` / `release(execution_id)` | 管理接口调用、重试、超时、失败归类、`finally` 清理 |
+| E2E 生命周期适配器 | `activate(case_id, execution_id)` / `release(execution_id)` | 管理接口调用、重试、超时、失败归类、`finally` 清理 |
 
 调用方不直接读取数据集文件，也不需要知道目录、文件扫描或绑定文件格式。
 

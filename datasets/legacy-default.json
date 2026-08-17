@@ -4,15 +4,24 @@
     {
       "description": "Display system general information",
       "name": "show system general",
-      "output": "System Name         : OceanStor_24A.Storage \nHealth Status       : Normal \nRunning Status      : Normal \nTotal Capacity      : 3.186TB \nSN                  : 210235G6EHZ0CX000011\nLocation            : \nProduct Model       : OceanStor 5510 \nProduct Version     : VX00R00XC11 Kunpeng\nHigh Water Level(%) : 80 \nLow Water Level(%)  : 30 \nWWN                 : XXXX \nTime                : 2015-07-07/15:34:05 UTC+08:00\nPatch Version       : SPC010 SPH010\nDescription         :"
+      "output": "System Name         : OceanStor_24A.Storage \nHealth Status       : Normal \nRunning Status      : Normal \nTotal Capacity      : 3.186TB \nSN                  : 210235G6EHZ0CX000012\nLocation            : \nProduct Model       : OceanStor 5510 \nProduct Version     : VX00R00XC11 Kunpeng\nHigh Water Level(%) : 80 \nLow Water Level(%)  : 30 \nWWN                 : XXXX \nTime                : 2015-07-07/15:34:05 UTC+08:00\nPatch Version       : SPC010 SPH010\nDescription         :"
     },
     {
       "description": "",
       "group": "",
       "name": "sudo -n dmidecode -s system-serial-number",
       "output": "3AE12DASDAE12312321DAD56547GSDSR23"
+    },
+    {
+      "description": "从日志导入",
+      "group": "",
+      "name": "show user user_name=admin",
+      "output": "Unknown command: show user user_name=admin\nType 'help' for available commands."
     }
   ],
+  "description": "从 config.json 自动迁移",
+  "id": "legacy-default",
+  "name": "设备管理",
   "rest_groups": [
     "OceanStor Pacific iBMC"
   ],
@@ -65,14 +74,11 @@
     "bind_address": "0.0.0.0",
     "port": 443
   },
+  "revision": 4,
   "server": {
     "bind_address": "0.0.0.0",
+    "password": "admin123",
     "port": 22,
-    "username": "admin",
-    "password": "admin123"
-  },
-  "id": "legacy-default",
-  "name": "迁移的默认数据集",
-  "description": "从 config.json 自动迁移",
-  "revision": 1
+    "username": "admin"
+  }
 }

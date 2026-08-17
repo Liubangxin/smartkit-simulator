@@ -27,6 +27,14 @@ assert.ok(html.includes("deleteGroup"), "groups must support deletion");
 assert.ok(html.includes("/api/rest/import-log/preview"),
   "the production REST editor must call the log import preview API");
 assert.ok(html.includes("根据日志导入"), "the REST editor must expose log import");
+assert.ok(html.includes("/api/ssh/import-log/preview"),
+  "the production SSH editor must call the SSH log import preview API");
+assert.ok(html.includes("openSshLogImport"),
+  "the SSH editor must expose log import beside its command actions");
+assert.ok(html.includes("ssh-command-choice"),
+  "SSH log preview must allow selecting only importable commands");
+assert.ok(html.includes("confirmSshLogImport"),
+  "selected SSH log commands must be persisted to the current dataset");
 assert.ok(html.includes("panel-actions-stack"),
   "item and group actions must be split into a dedicated stacked toolbar");
 assert.ok(html.includes("action-row item-actions"),
@@ -53,10 +61,20 @@ assert.ok(html.includes('onclick="openRenameDataset()"'),
   "the workbench header must expose an obvious dataset-name edit action");
 assert.ok(!html.includes("setRuntimeTab('logs')"),
   "runtime logs must stay embedded below each simulator view instead of using a duplicate tab");
+assert.ok(html.includes("editor-test-actions"),
+  "SSH and REST test actions must be rendered inside the protocol editor");
+assert.ok(html.includes("copySshTestCommand"),
+  "the SSH editor must expose a working test-command copy action");
+assert.ok(html.includes("testCurrentRoute"),
+  "the REST editor must expose a working current-route test action");
+assert.ok(html.includes("save-editor-action"),
+  "editable SSH and REST forms must expose an enabled save action");
 
 const elements = {};
 const element = (id) => elements[id] ||= {id, innerHTML: "", value: "", classList: {add() {}, remove() {}}};
 const calls = [];
+const requests = [];
+let clipboardText = "";
 const context = {
   console,
   location: {search: "", href: ""},
@@ -64,6 +82,7 @@ const context = {
   confirm: () => true,
   clearTimeout() {},
   setTimeout() {},
+  navigator: {clipboard: {writeText: async (value) => { clipboardText = value; }}},
   document: {
     body: {appendChild() {}},
     getElementById: element,
@@ -71,8 +90,9 @@ const context = {
     querySelector: () => null,
     querySelectorAll: () => [],
   },
-  fetch: async (url) => {
+  fetch: async (url, options = {}) => {
     calls.push(url);
+    requests.push({url, options});
     const payload = url === "/api/dataset-directory"
       ? {path: "D:/datasets", dataset_count: 1, invalid_count: 0}
       : url.startsWith("/api/datasets?")
@@ -86,6 +106,20 @@ const context = {
                             response_headers: {}, response_body: "ok"}]}
           : url === "/api/runtime/status" ? {status: "idle"}
           : url === "/api/services/status" ? {ssh: false, rest: false}
+          : url === "/api/rest/test" ? {status: "ok", status_code: 200, elapsed_ms: 12,
+              tls_version: "TLSv1.3", response_headers: [["Content-Type", "application/json"]],
+              response_body: "ok"}
+          : url === "/api/ssh/import-log/preview" ? {status: "ok",
+              summary: {total: 2, importable: 1, duplicate: 1, incomplete: 0},
+              commands: [
+                {status: "ready", command: {name: "show imported", description: "从日志导入", group: "", output: "ok"}},
+                {status: "duplicate", command: {name: "show", description: "从日志导入", group: "", output: "old"}},
+              ]}
+          : url === "/api/rest/import-log/preview" ? {status: "ok",
+              summary: {total: 1, importable: 0, duplicate: 1, incomplete: 0},
+              routes: [{status: "duplicate", route: {method: "GET", uri: "/health", group: "",
+                status_code: 201, response_headers: {"Content-Type": "application/json"},
+                response_body: "new response"}}]}
           : [];
     return {ok: true, status: 200, json: async () => payload};
   },
@@ -93,7 +127,7 @@ const context = {
 
 vm.createContext(context);
 vm.runInContext(script, context);
-setImmediate(() => {
+setImmediate(async () => {
   assert.ok(element("root").innerHTML.includes("正常设备"));
   assert.ok(calls.includes("/api/dataset-directory"));
   assert.ok(calls.includes("/api/runtime/status"));
@@ -106,5 +140,58 @@ setImmediate(() => {
     "copy dialog cancel action must not open dataset management");
   context.closeModal();
   assert.strictEqual(element("modalRoot").innerHTML, "");
+  await context.setWorktab("ssh");
+  context.toggleEdit();
+  assert.match(element("root").innerHTML, /save-editor-action" onclick="saveRevision\(\)" >保存数据集文件/,
+    "save action must be enabled as soon as SSH or REST editing starts");
+  await context.copySshTestCommand();
+  assert.ok(clipboardText.includes("ssh -p"), "SSH test action must write a usable command");
+  await context.setWorktab("rest");
+  element("routeMethod").value = "GET";
+  element("routeUri").value = "/health";
+  await context.testCurrentRoute();
+  assert.ok(calls.includes("/api/rest/test"), "REST test action must call the backend tester");
+  assert.ok(element("modalRoot").innerHTML.includes("200"),
+    "REST test action must display its response result");
+  context.closeModal();
+  await context.setWorktab("ssh");
+  context.openSshLogImport();
+  element("sshLogText").value = "Execute command line / Receive str";
+  await context.previewSshLogImport();
+  assert.ok(element("modalRoot").innerHTML.includes("show imported"));
+  assert.ok(element("modalRoot").innerHTML.includes('class="ssh-command-choice" type="checkbox" value="1" >'),
+    "duplicate SSH commands must be unchecked but selectable for explicit overwrite");
+  element("sshLogImportGroup").value = "Imported";
+  context.document.querySelectorAll = (selector) => selector === ".ssh-command-choice:checked"
+    ? [{value: "0"}, {value: "1"}] : [];
+  await context.confirmSshLogImport();
+  const saveRequest = requests.findLast(request => request.url === "/api/datasets/normal"
+    && request.options.method === "PUT");
+  const savedDataset = JSON.parse(saveRequest.options.body);
+  assert.ok(savedDataset.commands.some(command => command.name === "show imported"
+    && command.group === "Imported"), "selected SSH commands must be saved in the target group");
+  assert.strictEqual(savedDataset.commands.filter(command => command.name === "show").length, 1,
+    "overwriting a duplicate SSH command must not append a second command");
+  assert.ok(savedDataset.commands.some(command => command.name === "show"
+    && command.output === "old" && command.group === "Imported"),
+    "selected duplicate SSH command must replace the existing command");
+  await context.setWorktab("rest");
+  context.openLogImport();
+  element("restLogText").value = "REST log";
+  await context.previewLogImport();
+  assert.ok(element("modalRoot").innerHTML.includes('class="log-route-choice" type="checkbox" value="0" >'),
+    "duplicate REST routes must be unchecked but selectable for explicit overwrite");
+  element("logImportGroup").value = "ImportedRest";
+  context.document.querySelectorAll = (selector) => selector === ".log-route-choice:checked"
+    ? [{value: "0"}] : [];
+  await context.confirmLogImport();
+  const restSaveRequest = requests.findLast(request => request.url === "/api/datasets/normal"
+    && request.options.method === "PUT");
+  const restSavedDataset = JSON.parse(restSaveRequest.options.body);
+  assert.strictEqual(restSavedDataset.rest_routes.filter(route => route.method === "GET"
+    && route.uri === "/health").length, 1, "overwriting a REST route must not append a duplicate");
+  assert.ok(restSavedDataset.rest_routes.some(route => route.method === "GET" && route.uri === "/health"
+    && route.status_code === 201 && route.response_body === "new response"
+    && route.group === "ImportedRest"), "selected duplicate REST route must replace the existing route");
   console.log("production prototype-based UI syntax and bootstrap checks passed");
 });

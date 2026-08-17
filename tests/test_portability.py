@@ -39,7 +39,7 @@ class PortabilityTests(unittest.TestCase):
     def test_portable_package_entrypoint_was_removed(self):
         self.assertFalse((ROOT / "package_portable.ps1").exists())
 
-    def test_readme_documents_development_startup_only(self):
+    def test_readme_documents_development_and_electron_build(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
         self.assertIn("python -m venv .venv", readme)
@@ -48,7 +48,9 @@ class PortabilityTests(unittest.TestCase):
         self.assertNotIn("start.bat", readme)
         self.assertNotIn("stop.bat", readme)
         self.assertNotIn("package_portable.ps1", readme)
-        self.assertNotIn("PyInstaller", readme)
+        self.assertIn("build_electron.ps1 -Clean", readme)
+        self.assertIn("electron/dist/SmartKit-Simulator-1.0.0.exe", readme)
+        self.assertIn("PyInstaller", readme)
         self.assertNotIn("build_exe.ps1", readme)
 
 

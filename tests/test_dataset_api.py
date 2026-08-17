@@ -198,6 +198,83 @@ class DatasetApiTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertEqual("duplicate", response.get_json()["routes"][0]["status"])
 
+    def test_ssh_log_preview_extracts_commands_and_cleans_terminal_output(self):
+        self.client.post("/api/dataset-directory/switch", json={"path": str(self.datasets)})
+        self.client.post("/api/datasets", json={"id": "ssh-logs", "commands": []})
+        log_text = r"""2026-08-17 19:22:34:495 [INFO] Execute command line : show system general, timeout is : 30 (SshConnection.java:873) [login_device_pool-4-thread-2](pid-25320)
+2026-08-17 19:22:34:639 [INFO] Receive str : show system general
+System Name         : OceanStor_24A.Storage
+Health Status       : Normal
+smartkit:/> (SshConnection.java:1513) [login_device_pool-4-thread-2](pid-25320)
+2026-08-17 19:22:34:647 [INFO] Execute command line : show system general|filterColumn exclude columnList=Product\sModel, timeout is : 30 (SshConnection.java:873) [login_device_pool-4-thread-2](pid-25320)
+2026-08-17 19:22:34:774 [INFO] Receive str : show system general|filterColumn exclude columnList=Product\sModel
+Unknown command: show system general|filterColumn exclude columnList=Product\sModel
+Type 'help' for available commands.
+smartkit:/> (SshConnection.java:1513) [login_device_pool-4-thread-2](pid-25320)
+2026-08-17 19:22:34:845 [INFO] Execute command line : show user user_name=admin, timeout is : 30 (SshConnection.java:873) [login_device_pool-4-thread-2](pid-25320)
+2026-08-17 19:22:34:959 [INFO] Receive str : show user user_name=admin
+Unknown command: show user user_name=admin
+Type 'help' for available commands."""
+
+        response = self.client.post("/api/ssh/import-log/preview", json={
+            "dataset_id": "ssh-logs", "log_text": log_text})
+
+        self.assertEqual(200, response.status_code, response.get_json())
+        payload = response.get_json()
+        self.assertEqual({"total": 3, "importable": 3, "duplicate": 0, "incomplete": 0},
+                         payload["summary"])
+        commands = [entry["command"] for entry in payload["commands"]]
+        self.assertEqual("show system general", commands[0]["name"])
+        self.assertIn("System Name", commands[0]["output"])
+        self.assertNotIn("show system general\n", commands[0]["output"])
+        self.assertNotIn("smartkit:/>", commands[0]["output"])
+        self.assertNotIn("SshConnection.java", commands[0]["output"])
+        self.assertEqual(r"show system general|filterColumn exclude columnList=Product\sModel",
+                         commands[1]["name"])
+        self.assertIn("Unknown command", commands[1]["output"])
+        self.assertIn("Unknown command", commands[2]["output"])
+
+    def test_ssh_log_preview_pairs_threads_and_marks_duplicates_and_incomplete(self):
+        self.client.post("/api/dataset-directory/switch", json={"path": str(self.datasets)})
+        self.client.post("/api/datasets", json={"id": "ssh-edge", "commands": [
+            {"name": "existing", "description": "", "output": "old"}]})
+        log_text = """2026-08-17 19:00:00:001 [INFO] Execute command line : alpha, timeout is : 30 [thread-a](pid-1)
+2026-08-17 19:00:00:002 [INFO] Execute command line : beta, timeout is : 30 [thread-b](pid-2)
+2026-08-17 19:00:00:003 [INFO] Receive str : beta
+beta-output
+device:/> (SshConnection.java:1513) [thread-b](pid-2)
+2026-08-17 19:00:00:004 [INFO] Receive str : alpha
+alpha-output
+device:/> (SshConnection.java:1513) [thread-a](pid-1)
+2026-08-17 19:00:00:005 [INFO] Execute command line : existing, timeout is : 30 [thread-a](pid-1)
+2026-08-17 19:00:00:006 [INFO] Receive str : existing
+new-output
+device:/> (SshConnection.java:1513) [thread-a](pid-1)
+2026-08-17 19:00:00:007 [INFO] Execute command line : alpha, timeout is : 30 [thread-a](pid-1)
+2026-08-17 19:00:00:008 [INFO] Receive str : alpha
+second-alpha
+device:/> (SshConnection.java:1513) [thread-a](pid-1)
+2026-08-17 19:00:00:009 [INFO] Execute command line : orphan, timeout is : 30 [thread-a](pid-1)"""
+
+        payload = self.client.post("/api/ssh/import-log/preview", json={
+            "dataset_id": "ssh-edge", "log_text": log_text}).get_json()
+
+        self.assertEqual({"total": 5, "importable": 2, "duplicate": 2, "incomplete": 1},
+                         payload["summary"])
+        by_name = {entry["command"]["name"]: entry for entry in payload["commands"]}
+        self.assertEqual("alpha-output", payload["commands"][0]["command"]["output"])
+        self.assertEqual("beta-output", by_name["beta"]["command"]["output"])
+        self.assertEqual("duplicate", by_name["existing"]["status"])
+        self.assertEqual("missing_response", by_name["orphan"]["status"])
+
+    def test_ssh_log_preview_validates_log_and_dataset(self):
+        empty = self.client.post("/api/ssh/import-log/preview", json={"log_text": ""})
+        missing = self.client.post("/api/ssh/import-log/preview", json={
+            "dataset_id": "missing", "log_text": "2026 [INFO] Execute command line : x, timeout is : 1"})
+
+        self.assertEqual(400, empty.status_code)
+        self.assertEqual(404, missing.status_code)
+
 
 if __name__ == "__main__":
     unittest.main()

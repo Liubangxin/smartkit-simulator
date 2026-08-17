@@ -218,6 +218,57 @@ def parse_rest_routes_from_log(log_text):
             route["response_headers"] = {"Content-Type": "application/json"}
     return requests
 
+def _clean_ssh_received_output(command, body):
+    lines = body.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if lines:
+        lines[-1] = re.sub(
+            r"\s*\(SshConnection\.java:\d+\)\s*\[[^\]]+\](?:\(pid-[^)]+\))?\s*$",
+            "", lines[-1]).rstrip()
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if lines and re.fullmatch(r"[^\r\n]*:/>\s*", lines[-1]):
+        lines.pop()
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if lines and lines[0].strip() == command:
+        lines.pop(0)
+    return "\n".join(lines).strip()
+
+def parse_ssh_commands_from_log(log_text):
+    """Extract SSH commands and pair multiline Receive responses from execution logs."""
+    execute_pattern = re.compile(
+        r"^.*?Execute command line\s*:\s*(.*?)\s*,\s*timeout is\s*:\s*\d+.*?$",
+        re.MULTILINE)
+    commands = []
+    for match in execute_pattern.finditer(log_text):
+        name = match.group(1).strip()
+        commands.append({
+            "position": match.start(),
+            "thread_id": _log_thread_id(match.group(0)),
+            "command": {"name": name, "description": "从日志导入", "group": "", "output": None},
+        })
+
+    receive_pattern = re.compile(
+        r"^[^\r\n]*?\[(?:INFO|WARN|ERROR|DEBUG)\]\s+Receive str\s*:\s*([^\r\n]*)\r?\n"
+        r"(.*?)(?=^\d{4}-\d{2}-\d{2}[^\r\n]*\[(?:INFO|WARN|ERROR|DEBUG)\]|\Z)",
+        re.MULTILINE | re.DOTALL)
+    for match in receive_pattern.finditer(log_text):
+        name = match.group(1).strip()
+        thread_id = _log_thread_id(match.group(0))
+        eligible = [entry for entry in commands
+                    if entry["position"] < match.start()
+                    and entry["command"]["name"] == name
+                    and entry["command"]["output"] is None]
+        if thread_id:
+            same_thread = [entry for entry in eligible if entry["thread_id"] == thread_id]
+            if same_thread:
+                eligible = same_thread
+        if eligible:
+            eligible[-1]["command"]["output"] = _clean_ssh_received_output(name, match.group(2))
+    return [entry["command"] for entry in commands]
+
 class SimulatorServer(paramiko.ServerInterface):
     def __init__(self, username, password, commands, command_provider=None, config_provider=None):
         self._username, self._password, self._commands = username, password, commands
@@ -704,6 +755,42 @@ def api_runtime_activate_dataset():
         }
         result = {key: value for key, value in runtime_snapshot.items() if key != "snapshot"}
     return jsonify(result)
+
+@app.route("/api/ssh/import-log/preview", methods=["POST"])
+def api_preview_ssh_log_import():
+    payload = request.get_json() or {}
+    log_text = str(payload.get("log_text", ""))
+    if not log_text.strip():
+        return jsonify({"status": "error", "message": "Log text is required."}), 400
+    parsed_commands = parse_ssh_commands_from_log(log_text)
+    dataset_id = str(payload.get("dataset_id", "")).strip()
+    try:
+        source = dataset_workspace().get_dataset(dataset_id) if dataset_id else load_config()
+    except FileNotFoundError:
+        return jsonify({"status": "error", "message": "数据集不存在"}), 404
+    except WorkspaceError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+    existing = {str(command.get("name", "")) for command in source.get("commands", [])}
+    results = []
+    for command in parsed_commands:
+        name = command["name"]
+        if command["output"] is None:
+            results.append({"status": "missing_response", "message": "No matching response was found.",
+                            "command": command})
+        elif name in existing:
+            results.append({"status": "duplicate", "message": "The same command already exists.",
+                            "command": command})
+        else:
+            results.append({"status": "ready", "message": "Ready to import.",
+                            "command": command})
+            existing.add(name)
+    summary = {
+        "total": len(results),
+        "importable": sum(result["status"] == "ready" for result in results),
+        "duplicate": sum(result["status"] == "duplicate" for result in results),
+        "incomplete": sum(result["status"] == "missing_response" for result in results),
+    }
+    return jsonify({"status": "ok", "summary": summary, "commands": results})
 
 @app.route("/api/rest/import-log/preview", methods=["POST"])
 def api_preview_rest_log_import():

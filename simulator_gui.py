@@ -142,6 +142,55 @@ def save_config(config):
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
 
+def _log_thread_id(text):
+    matches = re.findall(r"\[([^\]\r\n]+)\](?:\(pid-[^)]+\))?", text)
+    return next((value for value in reversed(matches) if value not in {"INFO", "WARN", "ERROR", "DEBUG"}), "")
+
+def parse_rest_routes_from_log(log_text):
+    """Extract ordered REST route candidates by pairing URL/result events on each log thread."""
+    requests = []
+    events = []
+    request_pattern = re.compile(
+        r"^.*?##url\s*:\s*(\S+)\s+##method\s*:\s*([A-Za-z]+).*?$", re.MULTILINE)
+    for match in request_pattern.finditer(log_text):
+        raw_url, method = match.group(1), match.group(2).upper()
+        parsed_url = urllib.parse.urlsplit(raw_url)
+        uri = parsed_url.path or "/"
+        candidate = {
+            "method": method,
+            "uri": uri,
+            "group": "",
+            "status_code": 200,
+            "response_headers": {},
+            "response_body": None,
+        }
+        requests.append(candidate)
+        events.append((match.start(), "request", _log_thread_id(match.group(0)), candidate))
+
+    decoder = json.JSONDecoder()
+    for marker in re.finditer(r"##result\s*:\s*", log_text):
+        body_start = marker.end()
+        source = log_text[body_start:]
+        leading = len(source) - len(source.lstrip())
+        try:
+            value, consumed = decoder.raw_decode(source.lstrip())
+        except json.JSONDecodeError:
+            continue
+        body_end = body_start + leading + consumed
+        line_end = log_text.find("\n", body_end)
+        tail = log_text[body_end:line_end if line_end >= 0 else len(log_text)]
+        events.append((marker.start(), "result", _log_thread_id(tail), value))
+
+    pending = {}
+    for _position, event_type, thread_id, value in sorted(events, key=lambda event: event[0]):
+        if event_type == "request":
+            pending[thread_id] = value
+        elif thread_id in pending:
+            route = pending.pop(thread_id)
+            route["response_body"] = json.dumps(value, indent=2, ensure_ascii=False)
+            route["response_headers"] = {"Content-Type": "application/json"}
+    return requests
+
 class SimulatorServer(paramiko.ServerInterface):
     def __init__(self, username, password, commands, command_provider=None):
         self._username, self._password, self._commands = username, password, commands
@@ -374,6 +423,34 @@ def api_get_config():
 def api_save_config():
     save_config(request.get_json())
     return jsonify({"status": "ok"})
+
+@app.route("/api/rest/import-log/preview", methods=["POST"])
+def api_preview_rest_log_import():
+    log_text = str((request.get_json() or {}).get("log_text", ""))
+    if not log_text.strip():
+        return jsonify({"status": "error", "message": "Log text is required."}), 400
+    parsed_routes = parse_rest_routes_from_log(log_text)
+    existing = {(str(route.get("method", "GET")).upper(), str(route.get("uri", "")))
+                for route in load_config().get("rest_routes", [])}
+    results = []
+    for route in parsed_routes:
+        key = (route["method"], route["uri"])
+        if route["response_body"] is None:
+            results.append({"status": "missing_response", "message": "No matching response was found.",
+                            "route": route})
+        elif key in existing:
+            results.append({"status": "duplicate", "message": "The same method and URI already exist.",
+                            "route": route})
+        else:
+            results.append({"status": "ready", "message": "Ready to import.", "route": route})
+            existing.add(key)
+    summary = {
+        "total": len(results),
+        "importable": sum(result["status"] == "ready" for result in results),
+        "duplicate": sum(result["status"] == "duplicate" for result in results),
+        "incomplete": sum(result["status"] == "missing_response" for result in results),
+    }
+    return jsonify({"status": "ok", "summary": summary, "routes": results})
 
 @app.route("/api/rest/start", methods=["POST"])
 def api_start_rest_server():

@@ -106,7 +106,39 @@ body.resizing-panel { cursor: ew-resize; user-select:none; }
 .tester-panel pre { min-height:120px; max-height:220px; overflow:auto; white-space:pre-wrap; word-break:break-word; padding:10px; background:var(--panel-soft); border:1px solid var(--line); border-radius:6px; font:12px Consolas,monospace; }
 .tester-response-summary { display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding-top:12px; border-top:1px solid var(--line); }
 .tester-response-summary .success { color:var(--success); font-weight:700; }
-@media (max-width:700px) { .tester-grid,.tester-url { grid-template-columns:1fr; } }
+.import-panel { width:min(920px, calc(100% - 32px)); max-height:calc(100vh - 40px); overflow:auto; }
+.import-panel textarea { width:100%; min-height:190px; padding:10px; border:1px solid var(--line-strong); border-radius:6px; font:12px/1.5 Consolas,monospace; resize:vertical; outline:none; }
+.import-panel textarea:focus { border-color:var(--brand); box-shadow:0 0 0 3px rgba(36,107,254,.13); }
+.import-toolbar,.import-summary { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.import-toolbar { margin-top:10px; }
+.import-toolbar .spacer { flex:1; }
+.import-toolbar button { height:34px; padding:0 16px; border:1px solid var(--line-strong); border-radius:6px; background:#fff; cursor:pointer; font-weight:600; }
+.import-toolbar button.primary { color:#fff; border-color:var(--brand); background:var(--brand); }
+.import-target { display:flex; align-items:center; gap:7px; color:var(--muted); font-size:12px; font-weight:600; }
+.import-target select { width:auto; min-width:150px; height:34px; }
+.import-summary { margin-top:14px; padding:10px 12px; border:1px solid var(--line); border-radius:6px; background:var(--panel-soft); }
+.import-summary strong { font-size:15px; }
+.import-selection-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }
+.import-selection-actions button { height:30px; padding:0 12px; border:1px solid var(--line-strong); border-radius:6px; background:#fff; cursor:pointer; font-size:12px; font-weight:600; }
+.import-results { margin-top:12px; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+.import-pagination { display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-top:10px; color:var(--muted); font-size:12px; }
+.import-pagination button { height:30px; padding:0 12px; border:1px solid var(--line-strong); border-radius:6px; background:#fff; cursor:pointer; }
+.import-pagination button:disabled { cursor:not-allowed; opacity:.5; }
+.import-pagination select { width:auto; height:30px; padding:3px 7px; }
+.import-row { display:grid; grid-template-columns:28px 65px minmax(180px,1fr) 120px minmax(180px,1fr); gap:8px; align-items:center; padding:9px 10px; border-bottom:1px solid var(--line); font-size:12px; }
+.import-row.selectable { cursor:pointer; }
+.import-row.selectable:hover { background:#f5f8ff; }
+.import-row input[type="checkbox"] { width:16px; height:16px; padding:0; margin:0; cursor:pointer; accent-color:var(--brand); }
+.import-row input[type="checkbox"]:disabled { cursor:not-allowed; }
+.import-row:last-child { border-bottom:0; }
+.import-row.header { color:var(--muted); font-weight:700; background:var(--panel-soft); }
+.import-row code,.import-preview { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.import-preview { color:var(--muted); font-family:Consolas,monospace; }
+.import-badge { display:inline-block; width:max-content; padding:3px 7px; border-radius:999px; font-weight:700; }
+.import-badge.ready { color:var(--success); background:#e5f6ee; }
+.import-badge.duplicate { color:#a55b00; background:#fff1dc; }
+.import-badge.missing_response { color:var(--danger); background:#fbeaea; }
+@media (max-width:700px) { .tester-grid,.tester-url { grid-template-columns:1fr; } .import-row { grid-template-columns:24px 55px 1fr 105px; } .import-row > :last-child { display:none; } }
 </style>
 </head>
 <body>
@@ -161,7 +193,7 @@ body.resizing-panel { cursor: ew-resize; user-select:none; }
 <div class="main">
   <div class="left">
     <h3>Routes</h3><div id="routeList" class="cmd-list"></div>
-    <div class="left-btns"><button onclick="newRoute()">+ New</button><button onclick="deleteRoute()">Delete</button><button onclick="moveItem('rest')">Move</button></div>
+    <div class="left-btns"><button onclick="newRoute()">+ New</button><button onclick="openLogImport()">Import Logs</button><button onclick="deleteRoute()">Delete</button><button onclick="moveItem('rest')">Move</button></div>
     <div class="left-btns group-actions"><button onclick="createGroup('rest')">+ Group</button><button onclick="renameGroup('rest')">Rename</button><button onclick="deleteGroup('rest')">Delete Group</button></div>
   </div>
   <div class="panel-resizer" data-view="rest" title="Drag to resize panels"></div>
@@ -214,6 +246,20 @@ body.resizing-panel { cursor: ew-resize; user-select:none; }
     <div class="modal-actions"><button onclick="clearTesterResponse()">Clear</button><button id="copyCurlBtn" onclick="copyTesterCurl()">Copy cURL</button><button onclick="closeApiTester()">Close</button><button id="testerSendBtn" class="primary" onclick="sendApiTest()">Send Request</button></div>
   </div>
 </div>
+<div id="logImportModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="logImportTitle">
+  <div class="modal-panel import-panel">
+    <h3 id="logImportTitle">Import REST Routes from Logs</h3>
+    <p>Paste Redfish connection logs. URL and response entries are matched by log thread. Existing routes are skipped and never overwritten.</p>
+    <textarea id="importLogText" placeholder="Paste log text containing ##url, ##method and ##result entries..."></textarea>
+    <div class="import-toolbar"><label class="import-target">Target group:<select id="importTargetGroup"></select></label><span class="spacer"></span><button onclick="clearLogImport()">Clear</button><button id="parseLogBtn" class="primary" onclick="previewLogImport()">Parse Logs</button></div>
+    <div id="importSummary" class="import-summary hidden"></div>
+    <div id="importSelectionActions" class="import-selection-actions hidden"><button onclick="setAllLogImportRoutes(true)">Select All</button><button onclick="setAllLogImportRoutes(false)">Clear Selection</button></div>
+    <div id="importResults" class="import-results hidden"></div>
+    <div id="importPagination" class="import-pagination hidden"><label>Per page: <select id="importPageSize" onchange="changeLogImportPageSize()"><option>10</option><option>20</option><option>50</option></select></label><button id="importPreviousPage" onclick="changeLogImportPage(-1)">Previous</button><span id="importPageStatus"></span><button id="importNextPage" onclick="changeLogImportPage(1)">Next</button></div>
+    <div id="importError" class="modal-error"></div>
+    <div class="modal-actions"><button onclick="closeLogImport()">Cancel</button><button id="confirmLogImportBtn" class="primary" onclick="confirmLogImport()" disabled>Import Routes</button></div>
+  </div>
+</div>
 
 <script>
 let config = { server: {bind_address:"127.0.0.1", port:2222, username:"admin", password:"admin123"}, commands: [] };
@@ -232,6 +278,9 @@ let collapsedRouteGroups = new Set();
 let selectedCommandGroup = null;
 let selectedRestGroup = null;
 let restRunning = false;
+let logImportResults = [];
+let logImportPage = 1;
+let logImportPageSize = 10;
 
 async function init() {
   let r = await fetch("/api/config");
@@ -619,6 +668,153 @@ async function toggleSshServer() {
   try { if (sshRunning) await stopServer(); else await startServer(); }
   catch (error) { await showNotice(error.message || "SSH server operation failed."); }
   finally { button.disabled = false; updateServerToggle("ssh"); }
+}
+
+function resetLogImportPreview() {
+  logImportResults = [];
+  document.getElementById("importSummary").className = "import-summary hidden";
+  document.getElementById("importSummary").textContent = "";
+  document.getElementById("importResults").className = "import-results hidden";
+  document.getElementById("importResults").innerHTML = "";
+  document.getElementById("importSelectionActions").className = "import-selection-actions hidden";
+  document.getElementById("importPagination").className = "import-pagination hidden";
+  logImportPage = 1;
+  document.getElementById("importError").textContent = "";
+  document.getElementById("confirmLogImportBtn").disabled = true;
+  document.getElementById("confirmLogImportBtn").textContent = "Import Routes";
+}
+
+function openLogImport() {
+  let defaultGroup = selectedRestGroup && selectedRestGroup !== "Ungrouped" ? selectedRestGroup : "";
+  let groupSelect = document.getElementById("importTargetGroup");
+  groupSelect.innerHTML = "";
+  [{value:"", label:"Ungrouped"}, ...config.rest_groups.map(group => ({value:group, label:group}))].forEach(group => {
+    let option = document.createElement("option"); option.value = group.value; option.textContent = group.label; groupSelect.appendChild(option);
+  });
+  groupSelect.value = config.rest_groups.includes(defaultGroup) ? defaultGroup : "";
+  document.getElementById("importLogText").value = "";
+  resetLogImportPreview();
+  document.getElementById("logImportModal").className = "modal-backdrop";
+  document.getElementById("importLogText").focus();
+}
+
+function closeLogImport() {
+  document.getElementById("logImportModal").className = "modal-backdrop hidden";
+}
+
+function clearLogImport() {
+  document.getElementById("importLogText").value = "";
+  resetLogImportPreview();
+  document.getElementById("importLogText").focus();
+}
+
+function renderLogImportResults(result) {
+  logImportResults = (result.routes || []).map(item => ({...item, selected:item.status === "ready"}));
+  logImportPage = 1;
+  let summary = result.summary || {};
+  let summaryElement = document.getElementById("importSummary");
+  summaryElement.className = "import-summary";
+  summaryElement.innerHTML = "<span>Found <strong>" + (summary.total || 0) + "</strong></span>" +
+    "<span>Ready <strong>" + (summary.importable || 0) + "</strong></span>" +
+    "<span>Duplicates <strong>" + (summary.duplicate || 0) + "</strong></span>" +
+    "<span>Incomplete <strong>" + (summary.incomplete || 0) + "</strong></span>";
+  let container = document.getElementById("importResults");
+  container.className = "import-results";
+  document.getElementById("importSelectionActions").className = summary.importable ? "import-selection-actions" : "import-selection-actions hidden";
+  document.getElementById("importPagination").className = logImportResults.length ? "import-pagination" : "import-pagination hidden";
+  renderLogImportPage();
+  updateLogImportButton();
+}
+
+function renderLogImportPage() {
+  let container = document.getElementById("importResults");
+  container.innerHTML = "<div class='import-row header'><span></span><span>Method</span><span>URI</span><span>Result</span><span>Response preview</span></div>";
+  let labels = {ready:"Ready to import", duplicate:"Already exists", missing_response:"No response"};
+  let pageCount = Math.max(1, Math.ceil(logImportResults.length / logImportPageSize));
+  logImportPage = Math.min(logImportPage, pageCount);
+  let start = (logImportPage - 1) * logImportPageSize;
+  logImportResults.slice(start, start + logImportPageSize).forEach((item, pageIndex) => {
+    let index = start + pageIndex;
+    let route = item.route || {};
+    let row = document.createElement("div"); row.className = "import-row" + (item.status === "ready" ? " selectable" : "");
+    let checkbox = document.createElement("input"); checkbox.type = "checkbox"; checkbox.checked = item.selected; checkbox.disabled = item.status !== "ready"; checkbox.dataset.index = index;
+    checkbox.onchange = () => { item.selected = checkbox.checked; updateLogImportButton(); };
+    if (item.status === "ready") row.onclick = event => {
+      if (event.target === checkbox) return;
+      checkbox.checked = !checkbox.checked;
+      item.selected = checkbox.checked;
+      updateLogImportButton();
+    };
+    let method = document.createElement("strong"); method.textContent = route.method || ""; method.className = "route-method";
+    let uri = document.createElement("code"); uri.textContent = route.uri || ""; uri.title = route.uri || "";
+    let badge = document.createElement("span"); badge.className = "import-badge " + item.status; badge.textContent = labels[item.status] || item.status;
+    let preview = document.createElement("span"); preview.className = "import-preview";
+    preview.textContent = item.status === "duplicate" ? "Skipped; existing route is unchanged" : item.status === "missing_response" ? "No matching ##result on the same thread" : (route.response_body || "").replace(/\s+/g, " ");
+    preview.title = preview.textContent;
+    [checkbox, method, uri, badge, preview].forEach(element => row.appendChild(element));
+    container.appendChild(row);
+  });
+  document.getElementById("importPageStatus").textContent = "Page " + logImportPage + " of " + pageCount + " (" + logImportResults.length + " routes)";
+  document.getElementById("importPreviousPage").disabled = logImportPage <= 1;
+  document.getElementById("importNextPage").disabled = logImportPage >= pageCount;
+}
+
+function setAllLogImportRoutes(selected) {
+  logImportResults.forEach(item => { if (item.status === "ready") item.selected = selected; });
+  renderLogImportPage();
+  updateLogImportButton();
+}
+
+function changeLogImportPage(offset) {
+  let pageCount = Math.max(1, Math.ceil(logImportResults.length / logImportPageSize));
+  logImportPage = Math.max(1, Math.min(pageCount, logImportPage + offset));
+  renderLogImportPage();
+}
+
+function changeLogImportPageSize() {
+  logImportPageSize = parseInt(document.getElementById("importPageSize").value) || 10;
+  logImportPage = 1;
+  renderLogImportPage();
+}
+
+function updateLogImportButton() {
+  let count = logImportResults.filter(item => item.status === "ready" && item.selected).length;
+  let button = document.getElementById("confirmLogImportBtn");
+  button.disabled = count === 0;
+  button.textContent = count ? "Import " + count + " Route" + (count === 1 ? "" : "s") : "Import Routes";
+}
+
+async function previewLogImport() {
+  let logText = document.getElementById("importLogText").value;
+  if (!logText.trim()) { document.getElementById("importError").textContent = "Paste log text before parsing."; return; }
+  let button = document.getElementById("parseLogBtn"); button.disabled = true; button.textContent = "Parsing...";
+  resetLogImportPreview();
+  try {
+    let response = await fetch("/api/rest/import-log/preview", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({log_text:logText})});
+    let result = await response.json();
+    if (!response.ok) { document.getElementById("importError").textContent = result.message || "Unable to parse logs."; return; }
+    renderLogImportResults(result);
+    if (!result.summary.total) document.getElementById("importError").textContent = "No ##url and ##method entries were found.";
+  } catch (error) { document.getElementById("importError").textContent = error.message || "Unable to parse logs."; }
+  finally { button.disabled = false; button.textContent = "Parse Logs"; }
+}
+
+async function confirmLogImport() {
+  let selected = logImportResults.filter(item => item.status === "ready" && item.selected);
+  let imported = [];
+  let skipped = 0;
+  let targetGroup = document.getElementById("importTargetGroup").value;
+  selected.forEach(item => {
+    let route = item.route;
+    if (routeExists(route.method, route.uri, -1)) { skipped++; return; }
+    config.rest_routes.push({...route, group:targetGroup}); imported.push(route);
+  });
+  if (!imported.length) { document.getElementById("importError").textContent = "No routes remain to import; matching routes may already exist."; return; }
+  await saveConfig();
+  renderRouteList(); renderGroupOptions(); closeLogImport();
+  selectRoute(config.rest_routes.length - imported.length);
+  addLog("Imported " + imported.length + " REST route(s) from logs" + (skipped ? "; skipped " + skipped + " duplicate(s)" : ""));
+  await showNotice("Imported " + imported.length + " route(s)." + (skipped ? " Skipped " + skipped + " route(s) that already existed." : ""));
 }
 
 function renderRouteList() {

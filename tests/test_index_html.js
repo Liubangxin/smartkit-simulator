@@ -16,6 +16,8 @@ function element(id) {
       disabled: false,
       appendChild() {},
       addEventListener() {},
+      focus() {},
+      dataset: {},
       style: {},
     };
   }
@@ -30,12 +32,14 @@ const context = {
     querySelector() {
       return { offsetHeight: 0, style: {} };
     },
-    querySelectorAll() {
-      return [];
+    querySelectorAll(selector) {
+      return context.queryResults[selector] || [];
     },
     body: { classList: { add() {}, remove() {} } },
-    createElement() {
-      return { appendChild() {}, remove() {}, style: {} };
+    createElement(tagName) {
+      const created = { tagName: tagName.toUpperCase(), children: [], appendChild(child) { this.children.push(child); }, remove() {}, focus() {}, dataset: {}, style: {} };
+      context.createdElements.push(created);
+      return created;
     },
   },
   window: { innerHeight: 600, addEventListener() {} },
@@ -47,9 +51,18 @@ const context = {
       status: "ok", status_code: 201, reason: "Created", elapsed_ms: 12.5, tls_version: "TLSv1.3",
       response_headers: [["Content-Type", "application/json"]], response_body: "{\"ok\":true}"
     }) });
+    if (url === "/api/rest/import-log/preview") return Promise.resolve({ ok: true, json: () => Promise.resolve({
+      status: "ok", summary: { total: 3, importable: 2, duplicate: 1, incomplete: 0 }, routes: [
+        { status: "ready", route: { method: "GET", uri: "/redfish/v1/Chassis", status_code: 200, response_headers: {"Content-Type":"application/json"}, response_body: "{}" } },
+        { status: "ready", route: { method: "GET", uri: "/redfish/v1/Managers", status_code: 200, response_headers: {"Content-Type":"application/json"}, response_body: "{}" } },
+        { status: "duplicate", route: { method: "GET", uri: "/device", status_code: 200, response_headers: {}, response_body: "{}" } }
+      ]
+    }) });
     return Promise.resolve({ ok: true, json: () => Promise.resolve({ server: {}, commands: [] }) });
   },
   fetchCalls: [],
+  queryResults: {},
+  createdElements: [],
   promptValue: null,
   prompt() {
     return context.promptValue;
@@ -110,6 +123,7 @@ assert.strictEqual(context.groupNameExists(["System"], " system "), true);
 assert.strictEqual(context.validRouteUri("/redfish/v1/Sessions/{session_id}"), true);
 assert.strictEqual(context.validRouteUri("/redfish/v1/Sessions/{session_id}/{session_id}"), false);
 assert.strictEqual(context.validRouteUri("/redfish/v1/Sessions/{bad-name}"), false);
+assert.ok(html.includes('onclick="openLogImport()"'));
 
 elements.cmdOutput.value = "changed but cancelled";
 context.toggleEdit();
@@ -138,6 +152,49 @@ context.startServer().then(() => {
   assert.strictEqual(JSON.parse(startCall.options.body).bind_address, "0.0.0.0");
   assert.strictEqual(elements.sshServerToggle.textContent, "Stop Server");
   assert.strictEqual(elements.sshServerToggle.className, "btn-stop");
+  vm.runInContext("selectedRestGroup = null", context);
+  context.openLogImport();
+  assert.strictEqual(elements.importTargetGroup.value, "");
+  vm.runInContext("selectedRestGroup = 'Device'", context);
+  context.openLogImport();
+  assert.strictEqual(elements.importTargetGroup.value, "Device");
+  elements.importLogText.value = "##url : /redfish/v1/Chassis ##method : GET";
+  return context.previewLogImport();
+}).then(() => {
+  const previewCall = context.fetchCalls.find((call) => call.url === "/api/rest/import-log/preview");
+  assert.ok(previewCall);
+  assert.strictEqual(JSON.parse(previewCall.options.body).log_text, "##url : /redfish/v1/Chassis ##method : GET");
+  assert.strictEqual(vm.runInContext("logImportResults.length", context), 3);
+  const firstRouteCheckbox = context.createdElements.find(created => created.tagName === "INPUT" && created.dataset.index === 0);
+  const firstRouteRow = context.createdElements.find(created => created.children.includes(firstRouteCheckbox));
+  firstRouteCheckbox.checked = true;
+  firstRouteRow.onclick({ target: firstRouteRow });
+  assert.strictEqual(firstRouteCheckbox.checked, false, "clicking an importable route row must toggle its checkbox");
+  context.setAllLogImportRoutes(false);
+  assert.strictEqual(vm.runInContext("logImportResults.filter(item => item.status === 'ready').every(item => !item.selected)", context), true);
+  context.setAllLogImportRoutes(true);
+  assert.strictEqual(vm.runInContext("logImportResults.filter(item => item.status === 'ready').every(item => item.selected)", context), true);
+  const pageRoutes = Array.from({length: 12}, (_value, index) => ({status:"ready", route:{method:"GET", uri:"/page/" + index, status_code:200, response_headers:{}, response_body:"{}"}}));
+  context.renderLogImportResults({summary:{total:12, importable:12, duplicate:0, incomplete:0}, routes:pageRoutes});
+  assert.strictEqual(elements.importPageStatus.textContent, "Page 1 of 2 (12 routes)");
+  const pagedCheckbox = context.createdElements.filter(created => created.tagName === "INPUT" && created.dataset.index === 0).at(-1);
+  const pagedRow = context.createdElements.findLast(created => created.children.includes(pagedCheckbox));
+  pagedRow.onclick({target:pagedRow});
+  context.changeLogImportPage(1);
+  assert.strictEqual(elements.importPageStatus.textContent, "Page 2 of 2 (12 routes)");
+  context.changeLogImportPage(-1);
+  const rerenderedCheckbox = context.createdElements.filter(created => created.tagName === "INPUT" && created.dataset.index === 0).at(-1);
+  assert.strictEqual(rerenderedCheckbox.checked, false, "route selection must persist across pages");
+  return context.previewLogImport();
+}).then(() => {
+  elements.importTargetGroup.value = "";
+  vm.runInContext("logImportResults.forEach((item, index) => item.selected = index === 0)", context);
+  return context.confirmLogImport();
+}).then(() => {
+  const imported = vm.runInContext("config.rest_routes.find(route => route.uri === '/redfish/v1/Chassis')", context);
+  assert.strictEqual(imported.group, "");
+  assert.strictEqual(vm.runInContext("config.rest_routes.some(route => route.uri === '/redfish/v1/Managers')", context), false);
+  assert.strictEqual(vm.runInContext("config.rest_routes.filter(route => route.uri === '/device').length", context), 1);
   vm.runInContext("selectedCommandGroup = null; selectedIdx = -1", context);
   elements.cmdGroup.value = "System";
   context.modalValue = "Hardware";

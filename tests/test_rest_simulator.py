@@ -153,6 +153,46 @@ class RestSimulatorTests(unittest.TestCase):
         self.assertEqual(["Empty", "System"], normalized["command_groups"])
         self.assertEqual(["Device"], normalized["rest_groups"])
 
+    def test_log_import_extracts_multiline_json_and_reports_skipped_routes(self):
+        log_text = """2026-08-15 15:42:05:685 [INFO] ##url : /redfish/v1/Chassis ##method : GET ##ip : 127.0.0.1 (RedfishConnestion.java:541) [http-nio-exec-9](pid-3240)
+2026-08-15 15:42:05:700 [INFO] ##ip 127.0.0.1 ##result : {
+  \"@odata.id\": \"/redfish/v1/Chassis\",
+  \"Members\": [{\"@odata.id\": \"/redfish/v1/Chassis/1\"}]
+} (RedfishConnestion.java:761) [http-nio-exec-9](pid-3240)
+2026-08-15 15:42:05:702 [INFO] ##url : /api/device/info ##method : GET ##ip : 127.0.0.1 (RedfishConnestion.java:541) [http-nio-exec-10](pid-3240)
+2026-08-15 15:42:05:703 [INFO] ##result : {\"status\":\"duplicate\"} (RedfishConnestion.java:761) [http-nio-exec-10](pid-3240)
+2026-08-15 15:42:05:704 [INFO] ##url : /redfish/v1/Chassis/1 ##method : GET ##ip : 127.0.0.1 (RedfishConnestion.java:541) [http-nio-exec-9](pid-3240)"""
+
+        response = simulator_gui.app.test_client().post(
+            "/api/rest/import-log/preview", json={"log_text": log_text})
+
+        self.assertEqual(200, response.status_code)
+        result = response.get_json()
+        self.assertEqual({"total": 3, "importable": 1, "duplicate": 1, "incomplete": 1}, result["summary"])
+        self.assertEqual("ready", result["routes"][0]["status"])
+        self.assertEqual("/redfish/v1/Chassis", result["routes"][0]["route"]["uri"])
+        self.assertEqual("application/json", result["routes"][0]["route"]["response_headers"]["Content-Type"])
+        self.assertEqual({"@odata.id": "/redfish/v1/Chassis", "Members": [{"@odata.id": "/redfish/v1/Chassis/1"}]},
+                         json.loads(result["routes"][0]["route"]["response_body"]))
+        self.assertEqual("duplicate", result["routes"][1]["status"])
+        self.assertEqual("missing_response", result["routes"][2]["status"])
+
+    def test_log_import_uses_thread_to_match_interleaved_responses(self):
+        log_text = """2026 [INFO] ##url : /one ##method : GET (A.java:1) [thread-1](pid-1)
+2026 [INFO] ##url : /two ##method : POST (A.java:1) [thread-2](pid-1)
+2026 [INFO] ##result : {\"value\":2} (A.java:2) [thread-2](pid-1)
+2026 [INFO] ##result : {\"value\":1} (A.java:2) [thread-1](pid-1)"""
+
+        routes = simulator_gui.parse_rest_routes_from_log(log_text)
+
+        self.assertEqual({"value": 1}, json.loads(routes[0]["response_body"]))
+        self.assertEqual({"value": 2}, json.loads(routes[1]["response_body"]))
+
+    def test_log_import_rejects_empty_text(self):
+        response = simulator_gui.app.test_client().post(
+            "/api/rest/import-log/preview", json={"log_text": "  "})
+        self.assertEqual(400, response.status_code)
+
 
 if __name__ == "__main__":
     unittest.main()

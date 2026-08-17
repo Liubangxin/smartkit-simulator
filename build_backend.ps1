@@ -69,6 +69,7 @@ $pyinstallerArgs = @(
     "--distpath", $distBackend,
     "--name", "simulator_gui",
     "--add-data", "index.html;.",
+    "--add-data", "prototype_dataset_ui_a_full.html;.",
     "--add-data", "config.json;.",
     "simulator_gui.py"
 )

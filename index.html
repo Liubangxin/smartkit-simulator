@@ -138,11 +138,57 @@ body.resizing-panel { cursor: ew-resize; user-select:none; }
 .import-badge.ready { color:var(--success); background:#e5f6ee; }
 .import-badge.duplicate { color:#a55b00; background:#fff1dc; }
 .import-badge.missing_response { color:var(--danger); background:#fbeaea; }
+.workspace-main { height:calc(100vh - 96px); overflow:auto; padding:16px; }
+.workspace-toolbar { display:flex; gap:8px; align-items:center; padding:12px; background:#fff; border:1px solid var(--line); border-radius:8px; }
+.workspace-toolbar input { flex:1; min-width:240px; padding:8px 10px; border:1px solid var(--line-strong); border-radius:6px; }
+.workspace-toolbar button,.workspace-card button { padding:7px 12px; border:1px solid var(--line-strong); background:#fff; border-radius:6px; cursor:pointer; }
+.workspace-toolbar .primary,.workspace-card .primary { background:var(--brand); color:#fff; border-color:var(--brand); }
+.workspace-grid { display:grid; grid-template-columns:minmax(360px,1fr) minmax(430px,1.3fr); gap:14px; margin-top:14px; }
+.workspace-card { background:#fff; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+.workspace-card h3 { padding:12px 14px; border-bottom:1px solid var(--line); font-size:14px; }
+.workspace-card .card-tools { display:flex; gap:8px; padding:10px 12px; border-bottom:1px solid var(--line); }
+.workspace-card .card-tools input { flex:1; padding:7px 9px; border:1px solid var(--line-strong); border-radius:6px; }
+.data-table { width:100%; border-collapse:collapse; font-size:12px; }
+.data-table th,.data-table td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); }
+.data-table tbody tr { cursor:pointer; }
+.data-table tbody tr:hover,.data-table tbody tr.selected { background:#edf3ff; }
+.pager { padding:10px 12px; display:flex; justify-content:flex-end; align-items:center; gap:8px; color:var(--muted); font-size:12px; }
+.runtime-subtabs { display:flex; padding:6px 18px 0; background:#f7f9fb; border-bottom:1px solid var(--line); }
 @media (max-width:700px) { .tester-grid,.tester-url { grid-template-columns:1fr; } .import-row { grid-template-columns:24px 55px 1fr 105px; } .import-row > :last-child { display:none; } }
 </style>
 </head>
 <body>
-<div class="tabs"><button id="sshTab" class="tab active" onclick="showView('ssh')">SSH Simulator</button><button id="restTab" class="tab" onclick="showView('rest')">REST Simulator</button></div>
+<div class="tabs"><button id="workspaceTab" class="tab active" onclick="showAppView('workspace')">数据集工作台</button><button id="runtimeTab" class="tab" onclick="showAppView('runtime')">模拟器运行</button></div>
+<div id="workspaceView" class="view">
+  <div class="workspace-main">
+    <div class="workspace-toolbar">
+      <strong>数据集目录</strong><input id="datasetDirectory" aria-label="数据集目录">
+      <button onclick="switchDatasetDirectory()">切换目录</button><button onclick="rescanDatasets()">重新扫描</button>
+      <span id="directorySummary" class="status stopped">未扫描</span>
+    </div>
+    <div class="workspace-grid">
+      <section class="workspace-card">
+        <h3>数据集文件</h3>
+        <div class="card-tools"><input id="datasetKeyword" placeholder="按名称或 ID 搜索" oninput="reloadDatasets()"><button class="primary" onclick="createDataset()">新增数据集</button></div>
+        <table class="data-table"><thead><tr><th>数据集</th><th>文件</th><th>修订</th><th>内容</th></tr></thead><tbody id="datasetRows"></tbody></table>
+        <div class="pager"><button onclick="changeDatasetPage(-1)">上一页</button><span id="datasetPageStatus"></span><button onclick="changeDatasetPage(1)">下一页</button></div>
+      </section>
+      <section class="workspace-card">
+        <h3>用例与数据集关系</h3>
+        <div class="card-tools"><input id="bindingKeyword" placeholder="按 Case ID 或名称搜索" oninput="reloadBindings()"><button onclick="syncCaseCatalog()">同步用例目录</button></div>
+        <table class="data-table"><thead><tr><th>Case ID</th><th>用例名称</th><th>数据集</th><th>状态</th></tr></thead><tbody id="bindingRows"></tbody></table>
+        <div class="pager"><button onclick="changeBindingPage(-1)">上一页</button><span id="bindingPageStatus"></span><button onclick="changeBindingPage(1)">下一页</button></div>
+      </section>
+    </div>
+    <section class="workspace-card" style="margin-top:14px">
+      <h3>数据集内容（SSH 命令 / REST 路由）</h3>
+      <div class="card-tools"><strong id="datasetEditorTitle">请选择数据集</strong><span style="flex:1"></span><button class="primary" onclick="saveDatasetJson()">保存当前文件</button></div>
+      <textarea id="datasetJsonEditor" spellcheck="false" style="width:100%;min-height:300px;border:0;padding:14px;font:12px/1.5 Consolas,monospace;resize:vertical" placeholder="选择左侧数据集后，在这里维护其 SSH 命令和 REST 路由"></textarea>
+    </section>
+  </div>
+</div>
+<div id="runtimeShell" class="hidden">
+<div class="runtime-subtabs"><button id="sshTab" class="tab active" onclick="showView('ssh')">SSH</button><button id="restTab" class="tab" onclick="showView('rest')">REST</button><span id="runtimeDatasetStatus" style="margin-left:auto;padding:10px;color:var(--muted)">未激活数据集</span></div>
 <div id="sshView" class="view">
 <div class="topbar">
   <div class="brand">SmartKit Simulator</div>
@@ -214,6 +260,7 @@ body.resizing-panel { cursor: ew-resize; user-select:none; }
   </div>
 </div>
 </div>
+ </div>
 <div id="logResizer" class="log-resizer" title="Drag to resize logs"></div>
 <div id="logArea" class="log-area"></div>
 <div id="appModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
@@ -281,6 +328,11 @@ let restRunning = false;
 let logImportResults = [];
 let logImportPage = 1;
 let logImportPageSize = 10;
+let selectedDatasetId = null;
+let datasetPage = 1;
+let datasetPageCount = 1;
+let bindingPage = 1;
+let bindingPageCount = 1;
 
 async function init() {
   let r = await fetch("/api/config");
@@ -304,7 +356,120 @@ async function init() {
   setupPanelResize();
   applyLogHeight(logHeight);
   pollLogs();
+  await loadDatasetDirectory();
+  await reloadDatasets();
+  await reloadBindings();
+  await refreshRuntimeStatus();
+  showAppView("workspace");
 }
+
+async function loadDatasetDirectory() {
+  let response = await fetch("/api/dataset-directory");
+  let result = await response.json();
+  document.getElementById("datasetDirectory").value = result.path || "";
+  updateDirectorySummary(result);
+}
+
+function updateDirectorySummary(result) {
+  let badge = document.getElementById("directorySummary");
+  badge.textContent = (result.dataset_count || 0) + " 个数据集" + (result.invalid_count ? " · " + result.invalid_count + " 个无效文件" : "");
+  badge.className = "status " + (result.invalid_count ? "stopped" : "running");
+}
+
+async function switchDatasetDirectory() {
+  let response = await fetch("/api/dataset-directory/switch", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({path:document.getElementById("datasetDirectory").value.trim()})});
+  let result = await response.json();
+  if (!response.ok) return showNotice(result.message || "无法切换数据集目录");
+  datasetPage = bindingPage = 1; updateDirectorySummary(result); await reloadDatasets(); await reloadBindings();
+}
+
+async function rescanDatasets() {
+  let response = await fetch("/api/dataset-directory/rescan", {method:"POST"});
+  let result = await response.json(); updateDirectorySummary(result); await reloadDatasets();
+}
+
+async function reloadDatasets() {
+  let keyword = encodeURIComponent((document.getElementById("datasetKeyword") || {}).value || "");
+  let response = await fetch("/api/datasets?page=" + datasetPage + "&page_size=20&keyword=" + keyword);
+  let result = await response.json();
+  datasetPageCount = Math.max(1, Math.ceil(result.total / result.page_size));
+  if (datasetPage > datasetPageCount) { datasetPage = datasetPageCount; return reloadDatasets(); }
+  let rows = document.getElementById("datasetRows"); rows.innerHTML = "";
+  (result.items || []).forEach(item => {
+    let row = document.createElement("tr"); row.className = item.id === selectedDatasetId ? "selected" : "";
+    row.innerHTML = "<td><strong>" + escapeHtml(item.name) + "</strong><br><code>" + escapeHtml(item.id) + "</code></td><td>" + escapeHtml(item.filename) + "</td><td>r" + item.revision + "</td><td>SSH " + item.command_count + " / REST " + item.route_count + "</td>";
+    row.onclick = () => selectDataset(item.id); rows.appendChild(row);
+  });
+  document.getElementById("datasetPageStatus").textContent = "第 " + datasetPage + " / " + datasetPageCount + " 页，共 " + result.total + " 条";
+}
+
+function changeDatasetPage(offset) { datasetPage = Math.max(1, Math.min(datasetPageCount, datasetPage + offset)); reloadDatasets(); }
+
+async function selectDataset(datasetId) {
+  let response = await fetch("/api/datasets/" + encodeURIComponent(datasetId));
+  if (!response.ok) return showNotice("无法读取数据集");
+  config = await response.json(); selectedDatasetId = datasetId;
+  config.server = config.server || {bind_address:"127.0.0.1",port:2222,username:"admin",password:"admin123"};
+  config.rest_server = config.rest_server || {bind_address:"127.0.0.1",port:8080};
+  config.commands = config.commands || []; config.rest_routes = config.rest_routes || [];
+  config.command_groups = normalizeGroupNames(config.command_groups || [], config.commands);
+  config.rest_groups = normalizeGroupNames(config.rest_groups || [], config.rest_routes);
+  document.getElementById("datasetEditorTitle").textContent = config.name + " · " + config.id + ".json · r" + config.revision;
+  document.getElementById("datasetJsonEditor").value = JSON.stringify(config, null, 2);
+  selectedIdx = selectedRouteIdx = -1; renderList(); renderRouteList(); renderGroupOptions(); applyEditorMode(); applyRestEditorMode();
+  await reloadDatasets();
+}
+
+async function saveDatasetJson() {
+  if (!selectedDatasetId) return showNotice("请先选择数据集");
+  let value;
+  try { value = JSON.parse(document.getElementById("datasetJsonEditor").value); }
+  catch (error) { return showNotice("JSON 格式错误：" + error.message); }
+  let response = await fetch("/api/datasets/" + encodeURIComponent(selectedDatasetId), {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(value)});
+  let result = await response.json(); if (!response.ok) return showNotice(result.message || "保存失败");
+  config = result; document.getElementById("datasetJsonEditor").value = JSON.stringify(config, null, 2);
+  document.getElementById("datasetEditorTitle").textContent = config.name + " · " + config.id + ".json · r" + config.revision;
+  await reloadDatasets();
+}
+
+async function createDataset() {
+  let id = await showModal({title:"新增数据集", message:"输入稳定的数据集 ID（将作为文件名）", inputValue:"", confirmText:"创建"});
+  if (!id) return;
+  let response = await fetch("/api/datasets", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,name:id,description:"",server:{bind_address:"127.0.0.1",port:2222,username:"admin",password:"admin123"},rest_server:{bind_address:"127.0.0.1",port:8080},commands:[],rest_routes:[]})});
+  let result = await response.json(); if (!response.ok) return showNotice(result.message || "创建失败");
+  await reloadDatasets(); await selectDataset(result.id);
+}
+
+async function reloadBindings() {
+  let keyword = encodeURIComponent((document.getElementById("bindingKeyword") || {}).value || "");
+  let response = await fetch("/api/cases?page=" + bindingPage + "&page_size=20&keyword=" + keyword);
+  let result = await response.json(); bindingPageCount = Math.max(1, Math.ceil(result.total / result.page_size));
+  let rows = document.getElementById("bindingRows"); rows.innerHTML = "";
+  (result.items || []).forEach(item => {
+    let row = document.createElement("tr"); row.innerHTML = "<td><code>" + escapeHtml(item.case_id) + "</code></td><td>" + escapeHtml(item.name) + "</td><td>" + escapeHtml(item.dataset_id || "未绑定") + "</td><td>" + (item.dataset_id ? "已绑定" : "待绑定") + "</td>";
+    row.onclick = () => bindCase(item.case_id, item.dataset_id); rows.appendChild(row);
+  });
+  document.getElementById("bindingPageStatus").textContent = "第 " + bindingPage + " / " + bindingPageCount + " 页，共 " + result.total + " 条";
+}
+
+function changeBindingPage(offset) { bindingPage = Math.max(1, Math.min(bindingPageCount, bindingPage + offset)); reloadBindings(); }
+
+async function bindCase(caseId, current) {
+  let datasets = await (await fetch("/api/datasets?page=1&page_size=100")).json();
+  let selected = await showModal({title:"绑定数据集",message:caseId,options:(datasets.items || []).map(item => ({value:item.id,label:item.name + " (" + item.id + ")"})),selectedValue:current || "",confirmText:"保存绑定"});
+  if (selected === null) return;
+  let response = await fetch("/api/bindings/" + encodeURIComponent(caseId), {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataset_id:selected})});
+  let result = await response.json(); if (!response.ok) return showNotice(result.message || "绑定失败"); await reloadBindings();
+}
+
+async function syncCaseCatalog() { await showNotice("请由用例执行器调用 /api/cases/sync 推送稳定 Case ID 目录。"); }
+
+async function refreshRuntimeStatus() {
+  let response = await fetch("/api/runtime/status"); let result = await response.json();
+  document.getElementById("runtimeDatasetStatus").textContent = result.status === "active" ? "运行数据集：" + result.dataset_id + " · r" + result.dataset_revision + " · " + result.execution_id : "未激活数据集";
+}
+
+function escapeHtml(value) { let div = document.createElement("div"); div.textContent = String(value == null ? "" : value); return div.innerHTML; }
 
 function setupPanelResize() {
   document.querySelectorAll(".panel-resizer").forEach(resizer => {
@@ -336,6 +501,16 @@ function showView(name) {
   document.getElementById("sshTab").className = "tab" + (name === "ssh" ? " active" : "");
   document.getElementById("restTab").className = "tab" + (name === "rest" ? " active" : "");
   applyLogHeight(logHeight);
+}
+
+function showAppView(name) {
+  document.getElementById("workspaceView").className = "view" + (name === "workspace" ? "" : " hidden");
+  document.getElementById("runtimeShell").className = name === "runtime" ? "" : "hidden";
+  document.getElementById("workspaceTab").className = "tab" + (name === "workspace" ? " active" : "");
+  document.getElementById("runtimeTab").className = "tab" + (name === "runtime" ? " active" : "");
+  document.getElementById("logResizer").className = "log-resizer" + (name === "runtime" ? "" : " hidden");
+  document.getElementById("logArea").className = "log-area" + (name === "runtime" ? "" : " hidden");
+  if (name === "runtime") { applyLogHeight(logHeight); refreshRuntimeStatus(); }
 }
 
 function clamp(n, min, max) {
@@ -624,8 +799,13 @@ async function saveCommand() {
 }
 
 async function saveConfig() {
-  await fetch("/api/config", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(config) });
+  let url = selectedDatasetId ? "/api/datasets/" + encodeURIComponent(selectedDatasetId) : "/api/config";
+  let response = await fetch(url, { method: selectedDatasetId ? "PUT" : "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(config) });
+  let result = await response.json();
+  if (!response.ok) { await showNotice(result.message || "保存失败"); return false; }
+  if (selectedDatasetId) { config = result; await reloadDatasets(); }
   renderList();
+  return true;
 }
 
 async function startServer() {

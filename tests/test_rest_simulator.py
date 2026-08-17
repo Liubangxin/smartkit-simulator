@@ -52,6 +52,7 @@ class RestSimulatorTests(unittest.TestCase):
 
     def tearDown(self):
         simulator_gui.stop_rest_server_thread()
+        simulator_gui.reset_runtime_state()
         simulator_gui.set_data_dir(str(ROOT))
         simulator_gui.save_config(self.original)
         self.tempdir.cleanup()
@@ -141,6 +142,26 @@ class RestSimulatorTests(unittest.TestCase):
         simulator_gui.save_config(config)
         with self.request("/api/device/info") as response:
             self.assertEqual({"status": "changed"}, json.load(response))
+
+    def test_running_protocol_uses_activated_immutable_dataset_snapshot(self):
+        client = simulator_gui.app.test_client()
+        datasets = Path(self.tempdir.name) / "datasets"
+        client.post("/api/dataset-directory/switch", json={"path": str(datasets)})
+        created = client.post("/api/datasets", json={
+            "id": "snapshot", "commands": [], "rest_routes": [{
+                "method": "GET", "uri": "/snapshot", "status_code": 200,
+                "response_headers": {"Content-Type": "application/json"},
+                "response_body": '{"value":"before"}'
+            }]}).get_json()
+        client.put("/api/bindings/TC.Snapshot.001", json={"dataset_id": "snapshot"})
+        activated = client.post("/api/runtime/activate-case", json={
+            "case_id": "TC.Snapshot.001", "execution_id": "rest-run"})
+        self.assertEqual(200, activated.status_code, activated.get_json())
+
+        created["rest_routes"][0]["response_body"] = '{"value":"after"}'
+        client.put("/api/datasets/snapshot", json=created)
+        with self.request("/snapshot") as response:
+            self.assertEqual({"value": "before"}, json.load(response))
 
     def test_config_normalizes_explicit_and_legacy_groups(self):
         config = {

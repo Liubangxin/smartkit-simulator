@@ -73,7 +73,10 @@ class SimulatorGuiSshTests(unittest.TestCase):
         )
 
         self.assertEqual("", stderr)
-        self.assertIn("System General Information", stdout)
+        configured = next(item for item in config["commands"]
+                          if item["name"] == "show system general")
+        expected_first_line = configured["output"].strip().splitlines()[0]
+        self.assertIn(expected_first_line, stdout)
 
     def test_running_server_uses_saved_command_output_changes(self):
         original_config = simulator_gui.load_config()

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SmartKit Storage Simulator - Web GUI (Flask)"""
 
-import json, os, queue, socket, ssl, sys, threading, time, datetime, random, string, webbrowser, ipaddress, http.client, urllib.parse, re
+import copy, hashlib, json, os, queue, socket, ssl, sys, threading, time, datetime, random, string, webbrowser, ipaddress, http.client, urllib.parse, re
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -10,8 +10,9 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, send_file
 from werkzeug.serving import make_server
+from dataset_workspace import ConflictError, DatasetWorkspace, WorkspaceError
 
 def resource_path(relative_path):
     base = getattr(sys, "_MEIPASS", BASE_DIR)
@@ -43,6 +44,8 @@ server_lock = threading.Lock()
 rest_server = None
 rest_thread = None
 rest_lock = threading.Lock()
+runtime_lock = threading.Lock()
+runtime_snapshot = None
 
 DEFAULT_SERVER = {
     "bind_address": "127.0.0.1",
@@ -142,6 +145,30 @@ def save_config(config):
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
 
+def dataset_workspace():
+    workspace = DatasetWorkspace(DATA_DIR)
+    workspace.migrate_legacy(CONFIG_PATH)
+    return workspace
+
+def reset_runtime_state():
+    global runtime_snapshot
+    with runtime_lock:
+        runtime_snapshot = None
+    stop_event.set()
+
+def active_config():
+    with runtime_lock:
+        return copy.deepcopy(runtime_snapshot["snapshot"]) if runtime_snapshot else load_config()
+
+def _runtime_result(include_snapshot=False):
+    with runtime_lock:
+        if not runtime_snapshot:
+            return {"status": "idle"}
+        result = {key: value for key, value in runtime_snapshot.items() if key != "snapshot"}
+        if include_snapshot:
+            result["snapshot"] = copy.deepcopy(runtime_snapshot["snapshot"])
+        return result
+
 def _log_thread_id(text):
     matches = re.findall(r"\[([^\]\r\n]+)\](?:\(pid-[^)]+\))?", text)
     return next((value for value in reversed(matches) if value not in {"INFO", "WARN", "ERROR", "DEBUG"}), "")
@@ -192,12 +219,16 @@ def parse_rest_routes_from_log(log_text):
     return requests
 
 class SimulatorServer(paramiko.ServerInterface):
-    def __init__(self, username, password, commands, command_provider=None):
+    def __init__(self, username, password, commands, command_provider=None, config_provider=None):
         self._username, self._password, self._commands = username, password, commands
         self._command_provider = command_provider or (lambda: self._commands)
+        self._config_provider = config_provider
 
     def check_auth_password(self, username, password):
-        return paramiko.AUTH_SUCCESSFUL if username == self._username and password == self._password else paramiko.AUTH_FAILED
+        configured = self._config_provider().get("server", {}) if self._config_provider else {}
+        expected_user = configured.get("username", self._username)
+        expected_password = configured.get("password", self._password)
+        return paramiko.AUTH_SUCCESSFUL if username == expected_user and password == expected_password else paramiko.AUTH_FAILED
 
     def check_channel_request(self, kind, chanid):
         return paramiko.OPEN_SUCCEEDED if kind == "session" else paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
@@ -311,7 +342,8 @@ def run_server(bind_address, port, username, password, commands, server_stop_eve
         log_queue.put(f"Connection from {addr[0]}:{addr[1]}")
         transport = paramiko.Transport(client)
         transport.add_server_key(host_key)
-        server = SimulatorServer(username, password, commands, lambda: load_config().get("commands", []))
+        server = SimulatorServer(username, password, commands,
+                                 lambda: active_config().get("commands", []), active_config)
         try:
             transport.start_server(server=server)
         except paramiko.SSHException as e:
@@ -383,7 +415,7 @@ def create_rest_app():
     def simulate_rest(uri):
         path = "/" + uri
         method = request.method.upper()
-        config = load_config()
+        config = active_config()
         route, path_parameters = match_rest_route(method, path, config.get("rest_routes", []))
         if route is None:
             log_queue.put(f"REST {method} {path} -> 404")
@@ -413,7 +445,8 @@ def stop_rest_server_thread(timeout=3.0):
 
 @app.route("/")
 def index():
-    return open(resource_path("index.html"), encoding="utf-8").read()
+    with open(resource_path("prototype_dataset_ui_a_full.html"), encoding="utf-8") as stream:
+        return stream.read()
 
 @app.route("/api/config", methods=["GET"])
 def api_get_config():
@@ -424,14 +457,270 @@ def api_save_config():
     save_config(request.get_json())
     return jsonify({"status": "ok"})
 
+@app.route("/api/dataset-directory/switch", methods=["POST"])
+def api_switch_dataset_directory():
+    try:
+        path = (request.get_json() or {}).get("path", "")
+        return jsonify(dataset_workspace().switch_directory(path))
+    except WorkspaceError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+@app.route("/api/dataset-directory", methods=["GET"])
+def api_get_dataset_directory():
+    workspace = dataset_workspace()
+    return jsonify({"path": str(workspace.dataset_dir), **workspace.scan_summary()})
+
+@app.route("/api/dataset-directory/validate", methods=["POST"])
+def api_validate_dataset_directory():
+    try:
+        path = (request.get_json() or {}).get("path", "")
+        return jsonify(dataset_workspace().validate_directory(path))
+    except (OSError, WorkspaceError) as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+@app.route("/api/dataset-directory/rescan", methods=["POST"])
+def api_rescan_dataset_directory():
+    return jsonify({"status": "ok", **dataset_workspace().scan_summary()})
+
+@app.route("/api/datasets", methods=["GET"])
+def api_list_datasets():
+    try:
+        return jsonify(dataset_workspace().list_datasets(
+            request.args.get("page", 1), request.args.get("page_size", 20),
+            request.args.get("keyword", "")))
+    except (WorkspaceError, ValueError) as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+@app.route("/api/datasets", methods=["POST"])
+def api_create_dataset():
+    try:
+        return jsonify(dataset_workspace().create_dataset(request.get_json() or {})), 201
+    except ConflictError as error:
+        return jsonify({"status": "error", "message": str(error)}), 409
+    except WorkspaceError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+@app.route("/api/datasets/<dataset_id>", methods=["GET"])
+def api_get_dataset(dataset_id):
+    try:
+        return jsonify(dataset_workspace().get_dataset(dataset_id))
+    except FileNotFoundError:
+        return jsonify({"status": "error", "message": "数据集不存在"}), 404
+    except WorkspaceError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+@app.route("/api/datasets/<dataset_id>", methods=["PUT"])
+def api_update_dataset(dataset_id):
+    try:
+        return jsonify(dataset_workspace().update_dataset(dataset_id, request.get_json() or {}))
+    except FileNotFoundError:
+        return jsonify({"status": "error", "message": "数据集不存在"}), 404
+    except ConflictError as error:
+        return jsonify({"status": "error", "message": str(error)}), 409
+    except WorkspaceError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+@app.route("/api/datasets/<dataset_id>/copy", methods=["POST"])
+def api_copy_dataset(dataset_id):
+    payload = request.get_json() or {}
+    try:
+        return jsonify(dataset_workspace().copy_dataset(
+            dataset_id, payload.get("id", ""), payload.get("name", ""))), 201
+    except FileNotFoundError:
+        return jsonify({"status": "error", "message": "数据集不存在"}), 404
+    except ConflictError as error:
+        return jsonify({"status": "error", "message": str(error)}), 409
+    except WorkspaceError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+@app.route("/api/datasets/import", methods=["POST"])
+def api_import_dataset():
+    try:
+        payload = request.get_json() or {}
+        return jsonify(dataset_workspace().import_dataset(payload.get("dataset"))), 201
+    except ConflictError as error:
+        return jsonify({"status": "error", "message": str(error)}), 409
+    except WorkspaceError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+@app.route("/api/datasets/<dataset_id>/export", methods=["GET"])
+def api_export_dataset(dataset_id):
+    try:
+        workspace = dataset_workspace()
+        workspace.get_dataset(dataset_id)
+        return send_file(workspace.dataset_dir / f"{dataset_id}.json", as_attachment=True,
+                         download_name=f"{dataset_id}.json", mimetype="application/json")
+    except FileNotFoundError:
+        return jsonify({"status": "error", "message": "数据集不存在"}), 404
+    except WorkspaceError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+@app.route("/api/cases/sync", methods=["POST"])
+def api_sync_cases():
+    try:
+        return jsonify(dataset_workspace().sync_cases((request.get_json() or {}).get("cases", [])))
+    except WorkspaceError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+@app.route("/api/cases", methods=["GET"])
+def api_list_cases():
+    try:
+        return jsonify(dataset_workspace().list_cases(
+            request.args.get("page", 1), request.args.get("page_size", 20),
+            request.args.get("keyword", ""), request.args.get("module", ""),
+            request.args.get("binding_status", "")))
+    except (WorkspaceError, ValueError) as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+@app.route("/api/bindings", methods=["GET"])
+def api_list_bindings():
+    try:
+        return jsonify(dataset_workspace().list_bindings(
+            request.args.get("page", 1), request.args.get("page_size", 20),
+            request.args.get("dataset_id", ""), request.args.get("keyword", "")))
+    except (WorkspaceError, ValueError) as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+@app.route("/api/bindings/<path:case_id>", methods=["PUT"])
+def api_bind_case(case_id):
+    try:
+        return jsonify(dataset_workspace().bind_case(case_id, (request.get_json() or {}).get("dataset_id", "")))
+    except FileNotFoundError:
+        return jsonify({"status": "error", "message": "数据集不存在"}), 404
+    except WorkspaceError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+@app.route("/api/bindings/<path:case_id>", methods=["DELETE"])
+def api_unbind_case(case_id):
+    if not dataset_workspace().unbind_case(case_id):
+        return jsonify({"status": "error", "message": "绑定不存在"}), 404
+    return jsonify({"status": "ok"})
+
+@app.route("/api/bindings/import", methods=["POST"])
+def api_import_bindings():
+    try:
+        return jsonify(dataset_workspace().import_bindings(
+            (request.get_json() or {}).get("bindings", [])))
+    except FileNotFoundError:
+        return jsonify({"status": "error", "message": "绑定引用的数据集不存在"}), 404
+    except WorkspaceError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+@app.route("/api/runtime/health", methods=["GET"])
+def api_runtime_health():
+    return jsonify({"status": "ready", "runtime": _runtime_result()})
+
+@app.route("/api/runtime/status", methods=["GET"])
+def api_runtime_status():
+    return jsonify(_runtime_result())
+
+@app.route("/api/runtime/activate-case", methods=["POST"])
+def api_runtime_activate_case():
+    global runtime_snapshot
+    payload = request.get_json() or {}
+    case_id = str(payload.get("case_id", "")).strip()
+    execution_id = str(payload.get("execution_id", "")).strip()
+    if not case_id or not execution_id:
+        return jsonify({"status": "error", "message": "case_id 和 execution_id 不能为空"}), 400
+    with runtime_lock:
+        if runtime_snapshot:
+            if runtime_snapshot["execution_id"] == execution_id and runtime_snapshot["case_id"] == case_id:
+                return jsonify({key: value for key, value in runtime_snapshot.items() if key != "snapshot"})
+            return jsonify({"status": "error", "message": "模拟器实例正被其他执行占用",
+                            "active_execution_id": runtime_snapshot["execution_id"]}), 409
+        try:
+            dataset_id, dataset = dataset_workspace().resolve_case(case_id)
+        except FileNotFoundError:
+            return jsonify({"status": "error", "message": "绑定的数据集不存在"}), 404
+        except WorkspaceError as error:
+            return jsonify({"status": "error", "message": str(error)}), 404
+        canonical = json.dumps(dataset, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        server = {**DEFAULT_SERVER, **dataset.get("server", {})}
+        rest = {**DEFAULT_REST_SERVER, **dataset.get("rest_server", {})}
+        runtime_snapshot = {
+            "status": "active", "case_id": case_id, "execution_id": execution_id,
+            "dataset_id": dataset_id, "dataset_file": f"{dataset_id}.json",
+            "dataset_revision": dataset["revision"],
+            "checksum": "sha256:" + hashlib.sha256(canonical).hexdigest(),
+            "activated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "ssh_endpoint": f"{server['bind_address']}:{server['port']}",
+            "rest_endpoint": f"https://{rest['bind_address']}:{rest['port']}",
+            "snapshot": copy.deepcopy(dataset),
+        }
+        result = {key: value for key, value in runtime_snapshot.items() if key != "snapshot"}
+    runtime_path = os.path.join(DATA_DIR, "runtime", "active.json")
+    os.makedirs(os.path.dirname(runtime_path), exist_ok=True)
+    with open(runtime_path, "w", encoding="utf-8") as stream:
+        json.dump(runtime_snapshot, stream, ensure_ascii=False, indent=2)
+    return jsonify(result)
+
+@app.route("/api/runtime/release", methods=["POST"])
+def api_runtime_release():
+    global runtime_snapshot
+    execution_id = str((request.get_json() or {}).get("execution_id", "")).strip()
+    with runtime_lock:
+        if not runtime_snapshot:
+            return jsonify({"status": "idle"})
+        if execution_id != runtime_snapshot["execution_id"]:
+            return jsonify({"status": "error", "message": "execution_id 不是当前租约持有者"}), 409
+        runtime_snapshot = None
+    runtime_path = os.path.join(DATA_DIR, "runtime", "active.json")
+    if os.path.exists(runtime_path):
+        os.unlink(runtime_path)
+    return jsonify({"status": "released", "execution_id": execution_id})
+
+@app.route("/api/runtime/activate-dataset", methods=["POST"])
+def api_runtime_activate_dataset():
+    """Manually activate a dataset from the workbench without creating a case binding."""
+    global runtime_snapshot
+    payload = request.get_json() or {}
+    dataset_id = str(payload.get("dataset_id", "")).strip()
+    execution_id = str(payload.get("execution_id", "")).strip()
+    if not dataset_id or not execution_id:
+        return jsonify({"status": "error", "message": "dataset_id 和 execution_id 不能为空"}), 400
+    with runtime_lock:
+        if runtime_snapshot:
+            return jsonify({"status": "error", "message": "模拟器实例正被其他执行占用",
+                            "active_execution_id": runtime_snapshot["execution_id"]}), 409
+        try:
+            dataset = dataset_workspace().get_dataset(dataset_id)
+        except FileNotFoundError:
+            return jsonify({"status": "error", "message": "数据集不存在"}), 404
+        except WorkspaceError as error:
+            return jsonify({"status": "error", "message": str(error)}), 400
+        canonical = json.dumps(dataset, ensure_ascii=False, sort_keys=True,
+                               separators=(",", ":")).encode("utf-8")
+        server = {**DEFAULT_SERVER, **dataset.get("server", {})}
+        rest = {**DEFAULT_REST_SERVER, **dataset.get("rest_server", {})}
+        runtime_snapshot = {
+            "status": "active", "case_id": "manual", "execution_id": execution_id,
+            "dataset_id": dataset_id, "dataset_file": f"{dataset_id}.json",
+            "dataset_revision": dataset["revision"],
+            "checksum": "sha256:" + hashlib.sha256(canonical).hexdigest(),
+            "activated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "ssh_endpoint": f"{server['bind_address']}:{server['port']}",
+            "rest_endpoint": f"https://{rest['bind_address']}:{rest['port']}",
+            "snapshot": copy.deepcopy(dataset),
+        }
+        result = {key: value for key, value in runtime_snapshot.items() if key != "snapshot"}
+    return jsonify(result)
+
 @app.route("/api/rest/import-log/preview", methods=["POST"])
 def api_preview_rest_log_import():
-    log_text = str((request.get_json() or {}).get("log_text", ""))
+    payload = request.get_json() or {}
+    log_text = str(payload.get("log_text", ""))
     if not log_text.strip():
         return jsonify({"status": "error", "message": "Log text is required."}), 400
     parsed_routes = parse_rest_routes_from_log(log_text)
+    dataset_id = str(payload.get("dataset_id", "")).strip()
+    try:
+        source = dataset_workspace().get_dataset(dataset_id) if dataset_id else load_config()
+    except FileNotFoundError:
+        return jsonify({"status": "error", "message": "数据集不存在"}), 404
+    except WorkspaceError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
     existing = {(str(route.get("method", "GET")).upper(), str(route.get("uri", "")))
-                for route in load_config().get("rest_routes", [])}
+                for route in source.get("rest_routes", [])}
     results = []
     for route in parsed_routes:
         key = (route["method"], route["uri"])
@@ -576,6 +865,13 @@ def api_get_logs():
         except queue.Empty:
             break
     return jsonify(logs)
+
+@app.route("/api/services/status", methods=["GET"])
+def api_services_status():
+    return jsonify({
+        "ssh": bool(server_thread and server_thread.is_alive() and not stop_event.is_set()),
+        "rest": bool(rest_thread and rest_thread.is_alive() and rest_server is not None),
+    })
 
 def parse_args(argv=None):
     import argparse

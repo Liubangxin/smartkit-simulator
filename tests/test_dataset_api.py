@@ -151,6 +151,9 @@ class DatasetApiTests(unittest.TestCase):
         status = self.client.get("/api/runtime/status").get_json()
         self.assertEqual(1, status["dataset_revision"])
         self.assertNotIn("snapshot", status)
+        self.assertEqual("normal", status["dataset_name"])
+        self.assertEqual(1, status["command_count"])
+        self.assertEqual(0, status["route_count"])
 
         wrong_owner = self.client.post("/api/runtime/release", json={"execution_id": "run-2"})
         self.assertEqual(409, wrong_owner.status_code)

@@ -227,6 +227,10 @@ def _runtime_result(include_snapshot=False):
         if not runtime_snapshot:
             return {"status": "idle"}
         result = {key: value for key, value in runtime_snapshot.items() if key != "snapshot"}
+        snapshot = runtime_snapshot.get("snapshot") or {}
+        result["dataset_name"] = str(snapshot.get("name") or result.get("dataset_id") or "")
+        result["command_count"] = len(snapshot.get("commands") or [])
+        result["route_count"] = len(snapshot.get("rest_routes") or [])
         if include_snapshot:
             result["snapshot"] = copy.deepcopy(runtime_snapshot["snapshot"])
         return result

@@ -12,6 +12,10 @@ assert.ok(html.includes("/api/datasets?page="));
 assert.ok(html.includes("/api/bindings?dataset_id="));
 assert.ok(html.includes("/api/runtime/activate-dataset"));
 assert.ok(html.includes("/api/dataset-directory/switch"));
+assert.match(html, /function runtime\(\)\{const known=ds\(state\.active\)/,
+  "runtime helper must tolerate active snapshots absent from the current directory");
+assert.ok(html.includes("await loadDatasetPage();await loadRuntime();render()"),
+  "directory switch must resync runtime state after rescanning datasets");
 assert.ok(!html.includes("THROWAWAY PROTOTYPE"));
 assert.ok(!html.includes("所有操作仅在内存中"));
 assert.ok(!html.includes("for(let i=1;i<=1283"));

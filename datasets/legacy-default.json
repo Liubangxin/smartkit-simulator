@@ -28,6 +28,22 @@
   "rest_routes": [
     {
       "method": "GET",
+      "uri": "/rest/productmgmt/v1/system-info",
+      "group": "",
+      "status_code": 200,
+      "response_headers": {},
+      "response_body": "{\"a\":\"1\"}"
+    },
+    {
+      "group": "",
+      "method": "PUT",
+      "response_body": "{}",
+      "response_headers": {},
+      "status_code": 200,
+      "uri": "/rest/plat/smapp/v1/sessions"
+    },
+    {
+      "method": "GET",
       "response_body": "{\n  \"a\": \"1\"\n}",
       "response_headers": {},
       "status_code": 200,
@@ -74,7 +90,7 @@
     "bind_address": "0.0.0.0",
     "port": 443
   },
-  "revision": 4,
+  "revision": 7,
   "server": {
     "bind_address": "0.0.0.0",
     "password": "admin123",

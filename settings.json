@@ -1,3 +1,19 @@
 {
-  "legacy_migration_complete": true
+  "legacy_migration_complete": true,
+  "schema_version": 1,
+  "management_server": {
+    "bind_address": "127.0.0.1",
+    "port": 5800
+  },
+  "ssh_server": {
+    "bind_address": "127.0.0.1",
+    "port": 22,
+    "username": "admin",
+    "password": "admin123"
+  },
+  "rest_server": {
+    "bind_address": "127.0.0.1",
+    "port": 8080
+  },
+  "lease_timeout_seconds": 1800
 }

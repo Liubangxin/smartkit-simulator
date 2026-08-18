@@ -54,6 +54,68 @@ DEFAULT_SERVER = {
     "password": "admin123",
 }
 DEFAULT_REST_SERVER = {"bind_address": "127.0.0.1", "port": 8080}
+DEFAULT_APP_SETTINGS = {
+    "schema_version": 1,
+    "management_server": {"bind_address": "127.0.0.1", "port": 5800},
+    "ssh_server": {"bind_address": "127.0.0.1", "port": 2222,
+                   "username": "admin", "password": "admin123"},
+    "rest_server": {"bind_address": "127.0.0.1", "port": 8080},
+    "lease_timeout_seconds": 1800,
+}
+
+def _service_setting(value, default, name):
+    value = value if isinstance(value, dict) else {}
+    bind_address = str(value.get("bind_address", default["bind_address"])).strip()
+    if not bind_address:
+        raise WorkspaceError(f"{name}监听地址不能为空")
+    try:
+        port = int(value.get("port", default["port"]))
+    except (TypeError, ValueError) as error:
+        raise WorkspaceError(f"{name}端口必须是整数") from error
+    if not 1 <= port <= 65535:
+        raise WorkspaceError(f"{name}端口必须在 1 到 65535 之间")
+    return {"bind_address": bind_address, "port": port}
+
+def load_app_settings():
+    workspace = dataset_workspace()
+    stored = workspace.read_settings()
+    result = dict(stored)
+    result["schema_version"] = int(stored.get("schema_version", 1))
+    result["dataset_directory"] = str(workspace.dataset_dir)
+    for key, label in (("management_server", "管理服务"), ("ssh_server", "SSH 服务"),
+                       ("rest_server", "REST 服务")):
+        result[key] = _service_setting(stored.get(key), DEFAULT_APP_SETTINGS[key], label)
+    stored_ssh = stored.get("ssh_server", {}) if isinstance(stored.get("ssh_server"), dict) else {}
+    result["ssh_server"]["username"] = str(
+        stored_ssh.get("username") or DEFAULT_APP_SETTINGS["ssh_server"]["username"]).strip()
+    result["ssh_server"]["password"] = str(
+        stored_ssh.get("password", DEFAULT_APP_SETTINGS["ssh_server"]["password"]))
+    result["lease_timeout_seconds"] = int(
+        stored.get("lease_timeout_seconds", DEFAULT_APP_SETTINGS["lease_timeout_seconds"]))
+    return result
+
+def save_app_settings(payload):
+    current = load_app_settings()
+    updates = {"schema_version": 1}
+    for key, label in (("management_server", "管理服务"), ("ssh_server", "SSH 服务"),
+                       ("rest_server", "REST 服务")):
+        updates[key] = _service_setting(payload.get(key, current[key]), DEFAULT_APP_SETTINGS[key], label)
+    payload_ssh = payload.get("ssh_server", {}) if isinstance(payload.get("ssh_server"), dict) else {}
+    updates["ssh_server"]["username"] = str(
+        payload_ssh.get("username") or current["ssh_server"]["username"]).strip()
+    updates["ssh_server"]["password"] = str(
+        payload_ssh.get("password", current["ssh_server"]["password"]))
+    if not updates["ssh_server"]["username"]:
+        raise WorkspaceError("SSH 用户名不能为空")
+    try:
+        lease_timeout = int(payload.get("lease_timeout_seconds", current["lease_timeout_seconds"]))
+    except (TypeError, ValueError) as error:
+        raise WorkspaceError("执行租约超时必须是整数") from error
+    if lease_timeout <= 0:
+        raise WorkspaceError("执行租约超时必须大于 0")
+    updates["lease_timeout_seconds"] = lease_timeout
+    dataset_workspace().update_settings(updates)
+    return load_app_settings()
 
 def local_ipv4_addresses():
     addresses = []
@@ -312,16 +374,12 @@ def parse_ssh_commands_from_log(log_text):
     return [entry["command"] for entry in commands]
 
 class SimulatorServer(paramiko.ServerInterface):
-    def __init__(self, username, password, commands, command_provider=None, config_provider=None):
+    def __init__(self, username, password, commands, command_provider=None):
         self._username, self._password, self._commands = username, password, commands
         self._command_provider = command_provider or (lambda: self._commands)
-        self._config_provider = config_provider
 
     def check_auth_password(self, username, password):
-        configured = self._config_provider().get("server", {}) if self._config_provider else {}
-        expected_user = configured.get("username", self._username)
-        expected_password = configured.get("password", self._password)
-        return paramiko.AUTH_SUCCESSFUL if username == expected_user and password == expected_password else paramiko.AUTH_FAILED
+        return paramiko.AUTH_SUCCESSFUL if username == self._username and password == self._password else paramiko.AUTH_FAILED
 
     def check_channel_request(self, kind, chanid):
         return paramiko.OPEN_SUCCEEDED if kind == "session" else paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
@@ -436,7 +494,7 @@ def run_server(bind_address, port, username, password, commands, server_stop_eve
         transport = paramiko.Transport(client)
         transport.add_server_key(host_key)
         server = SimulatorServer(username, password, commands,
-                                 lambda: active_config().get("commands", []), active_config)
+                                 lambda: active_config().get("commands", []))
         try:
             transport.start_server(server=server)
         except paramiko.SSHException as e:
@@ -555,6 +613,20 @@ def api_switch_dataset_directory():
     try:
         path = (request.get_json() or {}).get("path", "")
         return jsonify(dataset_workspace().switch_directory(path))
+    except WorkspaceError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+@app.route("/api/settings", methods=["GET"])
+def api_get_settings():
+    try:
+        return jsonify(load_app_settings())
+    except WorkspaceError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
+@app.route("/api/settings", methods=["PUT"])
+def api_update_settings():
+    try:
+        return jsonify(save_app_settings(request.get_json() or {}))
     except WorkspaceError as error:
         return jsonify({"status": "error", "message": str(error)}), 400
 
@@ -728,8 +800,9 @@ def api_runtime_activate_case():
         except WorkspaceError as error:
             return jsonify({"status": "error", "message": str(error)}), 404
         canonical = json.dumps(dataset, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        server = {**DEFAULT_SERVER, **dataset.get("server", {})}
-        rest = {**DEFAULT_REST_SERVER, **dataset.get("rest_server", {})}
+        settings = load_app_settings()
+        server = settings["ssh_server"]
+        rest = settings["rest_server"]
         runtime_snapshot = {
             "status": "active", "case_id": case_id, "execution_id": execution_id,
             "dataset_id": dataset_id, "dataset_file": f"{dataset_id}.json",
@@ -783,8 +856,9 @@ def api_runtime_activate_dataset():
             return jsonify({"status": "error", "message": str(error)}), 400
         canonical = json.dumps(dataset, ensure_ascii=False, sort_keys=True,
                                separators=(",", ":")).encode("utf-8")
-        server = {**DEFAULT_SERVER, **dataset.get("server", {})}
-        rest = {**DEFAULT_REST_SERVER, **dataset.get("rest_server", {})}
+        settings = load_app_settings()
+        server = settings["ssh_server"]
+        rest = settings["rest_server"]
         runtime_snapshot = {
             "status": "active", "case_id": "manual", "execution_id": execution_id,
             "dataset_id": dataset_id, "dataset_file": f"{dataset_id}.json",
@@ -873,14 +947,13 @@ def api_preview_rest_log_import():
 @app.route("/api/rest/start", methods=["POST"])
 def api_start_rest_server():
     global rest_server, rest_thread
-    config = load_config()
+    settings = load_app_settings()
     data = request.get_json() or {}
-    bind_address = (data.get("bind_address") or config["rest_server"]["bind_address"]).strip()
-    port = int(data.get("port", config["rest_server"]["port"]))
+    bind_address = (data.get("bind_address") or settings["rest_server"]["bind_address"]).strip()
+    port = int(data.get("port", settings["rest_server"]["port"]))
     if not 1 <= port <= 65535:
         return jsonify({"status": "error", "message": "port must be between 1 and 65535"}), 400
-    config["rest_server"] = {"bind_address": bind_address, "port": port}
-    save_config(config)
+    save_app_settings({"rest_server": {"bind_address": bind_address, "port": port}})
     with rest_lock:
         if not stop_rest_server_thread():
             return jsonify({"status": "error", "message": "previous REST server did not stop"}), 409
@@ -953,27 +1026,24 @@ def api_test_rest_request():
 @app.route("/api/server/start", methods=["POST"])
 def api_start_server():
     global stop_event, server_thread
-    config = load_config()
+    settings = load_app_settings()
+    ssh_settings = settings["ssh_server"]
     data = request.get_json() or {}
-    bind_address = data.get("bind_address", config["server"].get("bind_address", "127.0.0.1"))
+    bind_address = data.get("bind_address", ssh_settings["bind_address"])
     bind_address = (bind_address or "127.0.0.1").strip() or "127.0.0.1"
-    port = data.get("port", config["server"]["port"])
-    username = data.get("username", config["server"]["username"])
-    password = data.get("password", config["server"]["password"])
-    config["server"] = {
-        "bind_address": bind_address,
-        "port": port,
-        "username": username,
-        "password": password,
-    }
-    save_config(config)
+    port = data.get("port", ssh_settings["port"])
+    username = data.get("username", ssh_settings["username"])
+    password = data.get("password", ssh_settings["password"])
+    save_app_settings({"ssh_server": {"bind_address": bind_address, "port": port,
+                                      "username": username, "password": password}})
     with server_lock:
         if not stop_server_thread():
             return jsonify({"status": "error", "message": "previous server did not stop"}), 409
         stop_event = threading.Event()
         server_thread = threading.Thread(
             target=run_server,
-            args=(bind_address, port, username, password, list(config["commands"]), stop_event),
+            args=(bind_address, port, username, password,
+                  list(active_config().get("commands", [])), stop_event),
             daemon=True,
         )
         server_thread.start()

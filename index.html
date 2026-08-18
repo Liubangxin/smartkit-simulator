@@ -435,7 +435,7 @@ async function saveDatasetJson() {
 async function createDataset() {
   let id = await showModal({title:"新增数据集", message:"输入稳定的数据集 ID（将作为文件名）", inputValue:"", confirmText:"创建"});
   if (!id) return;
-  let response = await fetch("/api/datasets", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,name:id,description:"",server:{bind_address:"127.0.0.1",port:2222,username:"admin",password:"admin123"},rest_server:{bind_address:"127.0.0.1",port:8080},commands:[],rest_routes:[]})});
+  let response = await fetch("/api/datasets", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,name:id,description:"",commands:[],rest_routes:[]})});
   let result = await response.json(); if (!response.ok) return showNotice(result.message || "创建失败");
   await reloadDatasets(); await selectDataset(result.id);
 }

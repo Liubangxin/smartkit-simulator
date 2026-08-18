@@ -88,15 +88,5 @@
       "uri": "/redfish/v1/SystemOverview"
     }
   ],
-  "rest_server": {
-    "bind_address": "0.0.0.0",
-    "port": 443
-  },
-  "revision": 8,
-  "server": {
-    "bind_address": "0.0.0.0",
-    "password": "admin123",
-    "port": 22,
-    "username": "admin"
-  }
+  "revision": 8
 }

@@ -150,7 +150,7 @@ flowchart LR
 | 数据集模块 | 分页查询、读取、创建、保存、导入、导出、归档、扫描目录 | 文件校验、原子保存、文件名安全、缓存重建、文件监听 |
 | 用例目录与绑定模块 | 同步用例目录、分页查询用例、绑定、解绑、批量导入 | `case_id` 唯一性、失效绑定检测、关系文件原子更新 |
 | 执行快照与租约模块 | 按用例激活、查询状态、释放 | 绑定解析、快照复制、并发互斥、超时接管、错误回滚 |
-| SSH 模拟适配器 | 标准 SSH 协议 | 从活动快照读取认证与命令响应 |
+| SSH 模拟适配器 | 标准 SSH 协议 | 从全局设置读取认证，从活动快照读取命令响应 |
 | REST 模拟适配器 | 标准 HTTPS 协议 | 从活动快照匹配方法、URI、参数和响应 |
 | E2E 生命周期适配器 | `activate(case_id, execution_id)` / `release(execution_id)` | 管理接口调用、重试、超时、失败归类、`finally` 清理 |
 
@@ -185,7 +185,9 @@ app-data/
   },
   "ssh_server": {
     "bind_address": "0.0.0.0",
-    "port": 22
+    "port": 22,
+    "username": "admin",
+    "password": "admin123"
   },
   "rest_server": {
     "bind_address": "0.0.0.0",
@@ -226,10 +228,6 @@ D:\SmartKit-Simulator\datasets\
   "created_at": "2026-08-17T10:00:00+08:00",
   "updated_at": "2026-08-17T11:30:00+08:00",
   "ssh": {
-    "auth": {
-      "username": "admin",
-      "password": "admin123"
-    },
     "groups": ["System", "Alarm"],
     "commands": [
       {
@@ -258,7 +256,7 @@ D:\SmartKit-Simulator\datasets\
 }
 ```
 
-监听地址、端口、证书和执行租约不能放入数据集文件，因为它们是进程级设置，不应随测试场景切换。
+监听地址、端口、SSH 认证、证书和执行租约不能放入数据集文件，因为它们是进程级设置，不应随测试场景切换。
 
 ### 5.4 用例绑定文件
 
@@ -494,14 +492,14 @@ flowchart TB
 - 远程管理必须配置访问令牌，并限制可访问网段。
 - 数据集路径必须规范化，禁止 `..`、绝对文件名注入和目录逃逸。
 - 工作台可创建和修改数据；执行器默认只能健康检查、激活、查询状态和释放。
-- 密码在界面中默认掩码显示；导出文件时明确提示其中可能包含认证信息。
+- SSH 用户名和密码在全局设置中维护，界面中默认掩码显示；数据集导出不包含认证信息。
 
 ## 14. 旧配置迁移
 
 首次升级检测到旧 `config.json` 时：
 
 1. 将 SSH/REST 监听地址和端口迁移到应用 `settings.json`。
-2. 将 SSH 认证、SSH 命令和 REST 路由写入 `default.json`。
+2. 将 SSH 命令和 REST 路由写入 `default.json`；SSH 认证迁移到应用 `settings.json`。
 3. 创建空的 `.smartkit/case-bindings.json` 和 `case-catalog.json`。
 4. 校验并激活 `default.json`，保持升级前行为。
 5. 保留旧 `config.json` 备份，但不再作为运行数据源。

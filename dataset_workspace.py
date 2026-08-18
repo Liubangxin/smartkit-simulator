@@ -50,6 +50,21 @@ class DatasetWorkspace:
         configured = settings.get("dataset_directory")
         return Path(configured).resolve() if configured else self.app_data_dir / "datasets"
 
+    def read_settings(self) -> dict:
+        settings = self._read_json(self.settings_path, {})
+        if not isinstance(settings, dict):
+            raise WorkspaceError("settings.json 必须是 JSON 对象")
+        return settings
+
+    def update_settings(self, values: dict) -> dict:
+        if not isinstance(values, dict):
+            raise WorkspaceError("全局设置必须是 JSON 对象")
+        with _WORKSPACE_LOCK:
+            settings = self.read_settings()
+            settings.update(values)
+            _atomic_json(self.settings_path, settings)
+        return settings
+
     def switch_directory(self, path: str) -> dict:
         if not path or not str(path).strip():
             raise WorkspaceError("数据集目录不能为空")
@@ -299,10 +314,14 @@ class DatasetWorkspace:
         return self.dataset_dir / f"{dataset_id}.json"
 
     def _load_dataset_path(self, path: Path) -> dict:
-        dataset = self._read_json(path, None)
-        if not isinstance(dataset, dict) or dataset.get("id") != path.stem:
+        raw = self._read_json(path, None)
+        if not isinstance(raw, dict) or raw.get("id") != path.stem:
             raise WorkspaceError(f"无效的数据集文件: {path.name}")
-        return self._normalize_dataset(dataset, creating=False)
+        dataset = self._normalize_dataset(raw, creating=False)
+        if "server" in raw or "rest_server" in raw:
+            with _WORKSPACE_LOCK:
+                _atomic_json(path, dataset)
+        return dataset
 
     def _normalize_dataset(self, payload, creating):
         if not isinstance(payload, dict):
@@ -311,11 +330,13 @@ class DatasetWorkspace:
         if not DATASET_ID.fullmatch(dataset_id):
             raise WorkspaceError("数据集 ID 只能包含字母、数字、点、下划线和连字符")
         result = dict(payload)
+        result.pop("server", None)
+        result.pop("rest_server", None)
         result.update(id=dataset_id, name=str(payload.get("name") or dataset_id).strip(),
                       description=str(payload.get("description") or ""),
                       revision=1 if creating else max(1, int(payload.get("revision", 1))))
-        for key, default in (("server", {}), ("rest_server", {}), ("commands", []),
-                             ("command_groups", []), ("rest_routes", []), ("rest_groups", [])):
+        for key, default in (("commands", []), ("command_groups", []),
+                             ("rest_routes", []), ("rest_groups", [])):
             result.setdefault(key, default)
         if not isinstance(result["commands"], list) or not isinstance(result["rest_routes"], list):
             raise WorkspaceError("commands 和 rest_routes 必须是数组")

@@ -37,6 +37,7 @@ class DatasetApiTests(unittest.TestCase):
                 "name": "正常设备",
                 "description": "全量用例共享的正常态数据",
                 "server": {"username": "admin", "password": "secret"},
+                "rest_server": {"bind_address": "127.0.0.1", "port": 8080},
                 "commands": [{"name": "show health", "output": "Normal"}],
                 "rest_routes": [],
             },
@@ -56,6 +57,27 @@ class DatasetApiTests(unittest.TestCase):
         )
         self.assertEqual("normal-device", stored["id"])
         self.assertEqual("Normal", stored["commands"][0]["output"])
+        self.assertNotIn("server", stored)
+        self.assertNotIn("rest_server", stored)
+
+    def test_global_service_settings_are_persisted_without_losing_dataset_directory(self):
+        self.client.post("/api/dataset-directory/switch", json={"path": str(self.datasets)})
+
+        response = self.client.put("/api/settings", json={
+            "ssh_server": {"bind_address": "127.0.0.1", "port": 2222,
+                           "username": "admin", "password": "admin123"},
+            "rest_server": {"bind_address": "127.0.0.1", "port": 18080},
+            "lease_timeout_seconds": 900,
+        })
+
+        self.assertEqual(200, response.status_code, response.get_json())
+        reloaded = self.client.get("/api/settings").get_json()
+        self.assertEqual({"bind_address": "127.0.0.1", "port": 18080},
+                         reloaded["rest_server"])
+        self.assertEqual({"bind_address": "127.0.0.1", "port": 2222,
+                          "username": "admin", "password": "admin123"},
+                         reloaded["ssh_server"])
+        self.assertEqual(str(self.datasets.resolve()), reloaded["dataset_directory"])
 
     def test_dataset_update_requires_current_revision(self):
         self.client.post("/api/dataset-directory/switch", json={"path": str(self.datasets)})
@@ -146,11 +168,31 @@ class DatasetApiTests(unittest.TestCase):
         self.assertEqual(1, first["dataset_count"])
         migrated = self.client.get("/api/datasets/legacy-default").get_json()
         self.assertEqual("legacy output", migrated["commands"][0]["output"])
+        self.assertNotIn("server", migrated)
+        self.assertNotIn("rest_server", migrated)
 
         migrated["commands"][0]["output"] = "user edit"
         self.client.put("/api/datasets/legacy-default", json=migrated)
         self.client.get("/api/dataset-directory")
         self.assertEqual("user edit", self.client.get("/api/datasets/legacy-default").get_json()["commands"][0]["output"])
+
+    def test_legacy_dataset_config_fields_are_stripped_from_file(self):
+        self.client.post("/api/dataset-directory/switch", json={"path": str(self.datasets)})
+        path = self.datasets / "legacy.json"
+        raw = {"id": "legacy", "name": "旧格式", "revision": 2,
+               "server": {"bind_address": "0.0.0.0", "port": 22,
+                          "username": "admin", "password": "old"},
+               "rest_server": {"bind_address": "0.0.0.0", "port": 443},
+               "commands": [{"name": "show", "output": "ok"}], "rest_routes": []}
+        path.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+
+        loaded = self.client.get("/api/datasets/legacy").get_json()
+        self.assertNotIn("server", loaded)
+        self.assertNotIn("rest_server", loaded)
+
+        stored = json.loads(path.read_text(encoding="utf-8"))
+        self.assertNotIn("server", stored)
+        self.assertNotIn("rest_server", stored)
 
     def test_dataset_copy_import_export_and_bulk_binding_are_supported(self):
         self.client.post("/api/dataset-directory/switch", json={"path": str(self.datasets)})

@@ -69,6 +69,10 @@ assert.ok(html.includes("testCurrentRoute"),
   "the REST editor must expose a working current-route test action");
 assert.ok(html.includes("save-editor-action"),
   "editable SSH and REST forms must expose an enabled save action");
+assert.ok(html.includes("settingsSshUsername"),
+  "SSH username must be configurable in global settings");
+assert.ok(!html.includes("sshUsername"),
+  "SSH credentials must not be edited inside a dataset");
 
 const elements = {};
 const element = (id) => elements[id] ||= {id, innerHTML: "", value: "", classList: {add() {}, remove() {}}};
@@ -95,13 +99,21 @@ const context = {
     requests.push({url, options});
     const payload = url === "/api/dataset-directory"
       ? {path: "D:/datasets", dataset_count: 1, invalid_count: 0}
+      : url === "/api/settings"
+        ? {...(options.method === "PUT" ? JSON.parse(options.body) : {}),
+           management_server: {bind_address: "127.0.0.1", port: 5800},
+           ssh_server: options.method === "PUT" ? JSON.parse(options.body).ssh_server
+             : {bind_address: "0.0.0.0", port: 22, username: "admin", password: "admin123"},
+           rest_server: options.method === "PUT" ? JSON.parse(options.body).rest_server
+             : {bind_address: "0.0.0.0", port: 443},
+           lease_timeout_seconds: 1800}
       : url.startsWith("/api/datasets?")
         ? {items: [{id: "normal", name: "正常设备", description: "", revision: 2,
                     command_count: 1, route_count: 1, filename: "normal.json"}],
            total: 1, page: 1, page_size: 8}
         : url === "/api/datasets/normal"
           ? {id: "normal", name: "正常设备", description: "", revision: 2,
-             server: {username: "admin", password: "secret"}, commands: [{name: "show", output: "ok"}],
+             commands: [{name: "show", output: "ok"}],
              rest_routes: [{method: "GET", uri: "/health", status_code: 200,
                             response_headers: {}, response_body: "ok"}]}
           : url === "/api/runtime/status" ? {status: "idle"}
@@ -131,8 +143,35 @@ setImmediate(async () => {
   assert.ok(element("root").innerHTML.includes("正常设备"));
   assert.ok(calls.includes("/api/dataset-directory"));
   assert.ok(calls.includes("/api/runtime/status"));
+  assert.ok(calls.includes("/api/settings"), "bootstrap must load persisted global settings");
   assert.ok(calls.some(url => url.startsWith("/api/datasets?page=")));
   assert.ok(element("root").innerHTML.includes('onclick="openRenameDataset()"'));
+  context.openSettings();
+  element("settingsRestBindAddress").value = "127.0.0.1";
+  element("settingsRestPort").value = "18080";
+  element("settingsSshBindAddress").value = "127.0.0.1";
+  element("settingsSshPort").value = "2222";
+  element("settingsSshUsername").value = "sim-user";
+  element("settingsSshPassword").value = "sim-pass";
+  await context.saveSettings();
+  const settingsRequest = requests.findLast(request => request.url === "/api/settings"
+    && request.options.method === "PUT");
+  assert.ok(settingsRequest, "global settings save must call the settings API");
+  assert.deepStrictEqual(JSON.parse(settingsRequest.options.body).rest_server,
+    {bind_address: "127.0.0.1", port: 18080});
+  assert.deepStrictEqual(JSON.parse(settingsRequest.options.body).ssh_server,
+    {bind_address: "127.0.0.1", port: 2222, username: "sim-user", password: "sim-pass"});
+  context.openSettings();
+  assert.ok(element("modalRoot").innerHTML.includes('id="settingsRestBindAddress" value="127.0.0.1"'),
+    "reopening global settings must show the persisted REST bind address");
+  assert.ok(element("modalRoot").innerHTML.includes('id="settingsSshUsername" value="sim-user"'),
+    "reopening global settings must show the persisted SSH username");
+  context.closeModal();
+  await context.toggleServer("rest");
+  const restStartRequest = requests.findLast(request => request.url === "/api/rest/start");
+  assert.deepStrictEqual(JSON.parse(restStartRequest.options.body),
+    {bind_address: "127.0.0.1", port: 18080},
+    "REST restart must use persisted global settings instead of dataset settings");
   context.openCreate(true);
   assert.ok(element("modalRoot").innerHTML.includes('onclick="closeModal()">取消</button>'),
     "copy dialog cancel action must close the modal");

@@ -27,15 +27,17 @@
   ],
   "rest_routes": [
     {
+      "group": "OceanStor Pacific iBMC",
       "method": "GET",
-      "uri": "/rest/productmgmt/v1/system-info",
-      "group": "",
+      "response_body": "{\n  \"a\": \"1\"\n}",
+      "response_headers": {
+        "Content-Type": "application/json"
+      },
       "status_code": 200,
-      "response_headers": {},
-      "response_body": "{\"a\":\"1\"}"
+      "uri": "/rest/productmgmt/v1/system-info"
     },
     {
-      "group": "",
+      "group": "OceanStor Pacific iBMC",
       "method": "PUT",
       "response_body": "{}",
       "response_headers": {},
@@ -90,7 +92,7 @@
     "bind_address": "0.0.0.0",
     "port": 443
   },
-  "revision": 7,
+  "revision": 8,
   "server": {
     "bind_address": "0.0.0.0",
     "password": "admin123",

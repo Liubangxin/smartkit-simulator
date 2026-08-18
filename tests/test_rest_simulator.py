@@ -209,6 +209,22 @@ class RestSimulatorTests(unittest.TestCase):
         self.assertEqual({"value": 1}, json.loads(routes[0]["response_body"]))
         self.assertEqual({"value": 2}, json.loads(routes[1]["response_body"]))
 
+    def test_log_import_extracts_http_session_sending_and_received_format(self):
+        log_text = """2026-08-18 10:24:46:392 [INFO] Sending PUT request to https://127.0.0.1:443/rest/plat/smapp/v1/sessions ...  (HttpSession.java:606) [http-nio-exec-6](pid-25320)
+2026-08-18 10:24:46:435 [INFO] Received PUT response successfully from https://127.0.0.1:443/rest/plat/smapp/v1/sessions. (HttpSession.java:611) [http-nio-exec-6](pid-25320)
+2026-08-18 10:24:46:520 [INFO] Sending GET request to https://127.0.0.1:443/rest/productmgmt/v1/system-info ...  (HttpSession.java:606) [http-nio-exec-6](pid-25320)
+2026-08-18 10:24:46:540 [INFO] Received GET response successfully from https://127.0.0.1:443/rest/productmgmt/v1/system-info. (HttpSession.java:611) [http-nio-exec-6](pid-25320)
+2026-08-18 10:24:46:542 [INFO] ResponseInfo : {"a":"1"} (RestConnection.java:837) [http-nio-exec-6](pid-25320)"""
+
+        routes = simulator_gui.parse_rest_routes_from_log(log_text)
+
+        self.assertEqual([("PUT", "/rest/plat/smapp/v1/sessions"),
+                          ("GET", "/rest/productmgmt/v1/system-info")],
+                         [(route["method"], route["uri"]) for route in routes])
+        self.assertEqual({}, json.loads(routes[0]["response_body"]))
+        self.assertEqual({"a": "1"}, json.loads(routes[1]["response_body"]))
+        self.assertEqual({"Content-Type": "application/json"}, routes[1]["response_headers"])
+
     def test_log_import_rejects_empty_text(self):
         response = simulator_gui.app.test_client().post(
             "/api/rest/import-log/preview", json={"log_text": "  "})

@@ -87,6 +87,24 @@ class HeadlessModeTests(unittest.TestCase):
                 proc.terminate()
                 proc.wait(timeout=10)
 
+    def test_headless_uses_requested_management_port(self):
+        probe = __import__("socket").socket()
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+        probe.close()
+
+        proc, lines = self._spawn("--headless", "--management-port", str(port))
+        try:
+            ready_port = self._wait_ready(proc, lines)
+            self.assertEqual(port, ready_port)
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/runtime/health", timeout=5
+            ) as response:
+                self.assertEqual("ready", json.load(response)["status"])
+        finally:
+            proc.terminate()
+            proc.wait(timeout=10)
+
     def test_plain_mode_does_not_use_headless_port_signal(self):
         # Without --headless, must NOT print SMARTKIT_READY_PORT (preserve original CLI behavior)
         proc, lines = self._spawn()

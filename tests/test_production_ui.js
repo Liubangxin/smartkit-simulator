@@ -73,6 +73,12 @@ assert.ok(html.includes("testCurrentRoute"),
   "the REST editor must expose a working current-route test action");
 assert.ok(html.includes("save-editor-action"),
   "editable SSH and REST forms must expose an enabled save action");
+assert.ok(html.includes("${state.editing||state.dirty?'':'disabled'}"),
+  "the editor save action must be gated on editing or dirty state so deletions stay saveable");
+assert.ok(html.includes("deleteDataset"),
+  "datasets must expose a delete action wired to the DELETE API");
+assert.match(html, /deleteDataset\('\$\{d\.id\}'\)">删除/,
+  "the dataset manager must list a delete action per row");
 assert.ok(html.includes("settingsSshUsername"),
   "SSH username must be configurable in global settings");
 assert.ok(!html.includes("sshUsername"),
@@ -236,5 +242,21 @@ setImmediate(async () => {
   assert.ok(restSavedDataset.rest_routes.some(route => route.method === "GET" && route.uri === "/health"
     && route.status_code === 201 && route.response_body === "new response"
     && route.group === "ImportedRest"), "selected duplicate REST route must replace the existing route");
+  // Deleting a command must persist the dataset immediately, without relying on the editor save action.
+  await context.setWorktab("ssh");
+  await context.deleteEntry();
+  const deleteSaveRequest = requests.findLast(request => request.url === "/api/datasets/normal"
+    && request.options.method === "PUT");
+  assert.ok(deleteSaveRequest, "deleting a command must persist the dataset immediately");
+  assert.ok(!JSON.parse(deleteSaveRequest.options.body).commands.some(command => command.name === "show imported"),
+    "the persisted dataset must no longer contain the deleted command");
+  // Datasets must expose a working delete flow through the manager.
+  context.openDatasetManager();
+  assert.ok(element("modalRoot").innerHTML.includes("删除"),
+    "dataset manager must expose a delete action");
+  await context.deleteDataset("normal");
+  const deleteRequest = requests.findLast(request => request.url === "/api/datasets/normal"
+    && request.options.method === "DELETE");
+  assert.ok(deleteRequest, "deleting a dataset must call the DELETE API");
   console.log("production prototype-based UI syntax and bootstrap checks passed");
 });

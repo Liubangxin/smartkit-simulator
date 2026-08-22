@@ -229,6 +229,40 @@ class DatasetApiTests(unittest.TestCase):
         self.assertEqual("manual", response.get_json()["dataset_id"])
         self.assertEqual("manual-ui-1", response.get_json()["execution_id"])
 
+    def test_dataset_can_be_deleted_and_bindings_are_cleaned(self):
+        self.client.post("/api/dataset-directory/switch", json={"path": str(self.datasets)})
+        self.client.post("/api/datasets", json={"id": "doomed", "commands": [], "rest_routes": []})
+        self.client.put("/api/bindings/TC.Storage.0001", json={"dataset_id": "doomed"})
+
+        response = self.client.delete("/api/datasets/doomed")
+
+        self.assertEqual(200, response.status_code, response.get_json())
+        self.assertEqual("doomed", response.get_json()["deleted"])
+        self.assertEqual(["TC.Storage.0001"], response.get_json()["unbound_cases"])
+        self.assertFalse((self.datasets / "doomed.json").exists())
+        self.assertEqual(404, self.client.get("/api/datasets/doomed").status_code)
+        bindings = self.client.get("/api/bindings?page=1&page_size=20").get_json()
+        self.assertEqual(0, bindings["total"])
+
+    def test_active_dataset_cannot_be_deleted_until_released(self):
+        self.client.post("/api/dataset-directory/switch", json={"path": str(self.datasets)})
+        self.client.post("/api/datasets", json={"id": "active-ds", "commands": [], "rest_routes": []})
+        self.client.post("/api/runtime/activate-dataset", json={
+            "dataset_id": "active-ds", "execution_id": "run-x"})
+
+        blocked = self.client.delete("/api/datasets/active-ds")
+        self.assertEqual(409, blocked.status_code, blocked.get_json())
+        self.assertTrue((self.datasets / "active-ds.json").exists())
+
+        self.client.post("/api/runtime/release", json={"execution_id": "run-x"})
+        released = self.client.delete("/api/datasets/active-ds")
+        self.assertEqual(200, released.status_code, released.get_json())
+        self.assertFalse((self.datasets / "active-ds.json").exists())
+
+    def test_deleting_missing_dataset_returns_404(self):
+        self.client.post("/api/dataset-directory/switch", json={"path": str(self.datasets)})
+        self.assertEqual(404, self.client.delete("/api/datasets/ghost").status_code)
+
     def test_log_import_duplicate_check_is_scoped_to_selected_dataset(self):
         self.client.post("/api/dataset-directory/switch", json={"path": str(self.datasets)})
         self.client.post("/api/datasets", json={"id": "logs", "commands": [], "rest_routes": [

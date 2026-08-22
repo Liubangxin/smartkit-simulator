@@ -91,6 +91,23 @@ Electron 桌面版启动时会在后台运行 Python 模拟器后端，收到后
 - SSH Host Key
 - REST TLS 证书和私钥
 
+自动化执行器可以使用固定管理端口和显式数据目录启动同一个便携程序：
+
+```powershell
+.\SmartKit-Simulator-1.0.0.exe --automation `
+  --management-port 5800 `
+  --data-dir D:\code\smartkit\simulator
+```
+
+`--automation` 不创建工作台窗口；`--management-port` 端口不可用时启动失败，不会静默切换
+到其他端口。执行器应等待 `GET /api/runtime/health` 返回 `ready` 后再控制协议服务或激活用例。
+
+已有管理后端时，可以只打开并附着一个工作台窗口，不再启动第二个后端：
+
+```powershell
+.\SmartKit-Simulator-1.0.0.exe --attach-management-url http://127.0.0.1:5800
+```
+
 ## 数据集
 
 ### 数据目录

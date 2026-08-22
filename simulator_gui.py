@@ -689,6 +689,19 @@ def api_update_dataset(dataset_id):
     except WorkspaceError as error:
         return jsonify({"status": "error", "message": str(error)}), 400
 
+@app.route("/api/datasets/<dataset_id>", methods=["DELETE"])
+def api_delete_dataset(dataset_id):
+    try:
+        with runtime_lock:
+            if runtime_snapshot and runtime_snapshot.get("dataset_id") == dataset_id:
+                return jsonify({"status": "error",
+                                "message": "运行中的数据集不能删除，请先释放执行快照"}), 409
+        return jsonify(dataset_workspace().delete_dataset(dataset_id))
+    except FileNotFoundError:
+        return jsonify({"status": "error", "message": "数据集不存在"}), 404
+    except WorkspaceError as error:
+        return jsonify({"status": "error", "message": str(error)}), 400
+
 @app.route("/api/datasets/<dataset_id>/copy", methods=["POST"])
 def api_copy_dataset(dataset_id):
     payload = request.get_json() or {}
@@ -1083,10 +1096,15 @@ def parse_args(argv=None):
                         help="Run without browser; print SMARTKIT_READY_PORT=<port>")
     parser.add_argument("--data-dir", default=None,
                         help="Directory for config.json and host_key")
+    parser.add_argument("--management-port", type=int, default=None,
+                        help="Fixed management port for automation; fail if unavailable")
     return parser.parse_args(argv)
 
-def run_headless():
-    server = make_server("127.0.0.1", 0, app, threaded=True)
+def run_headless(management_port=None):
+    port = 0 if management_port is None else management_port
+    if not 1 <= port <= 65535 and port != 0:
+        raise ValueError("management port must be between 1 and 65535")
+    server = make_server("127.0.0.1", port, app, threaded=True)
     print(f"SMARTKIT_READY_PORT={server.server_port}", flush=True)
     server.serve_forever()
 
@@ -1095,7 +1113,7 @@ if __name__ == "__main__":
     if args.data_dir:
         set_data_dir(args.data_dir)
     if args.headless:
-        run_headless()
+        run_headless(args.management_port)
     else:
         port = 5800
         for p in range(5800, 5900):

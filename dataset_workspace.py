@@ -175,6 +175,24 @@ class DatasetWorkspace:
         imported.pop("revision", None)
         return self.create_dataset(imported)
 
+    def delete_dataset(self, dataset_id: str) -> dict:
+        """Remove a dataset file and unbind every case that references it."""
+        with _WORKSPACE_LOCK:
+            path = self._dataset_path(dataset_id)
+            if not path.exists():
+                raise FileNotFoundError(dataset_id)
+            try:
+                path.unlink()
+            except OSError as error:
+                raise WorkspaceError(f"无法删除数据集文件: {error}") from error
+            bindings = self._bindings()
+            unbound = [case_id for case_id, bound in bindings.items() if bound == dataset_id]
+            for case_id in unbound:
+                bindings.pop(case_id, None)
+            if unbound:
+                self._save_bindings(bindings)
+        return {"status": "ok", "deleted": dataset_id, "unbound_cases": unbound}
+
     def list_datasets(self, page, page_size, keyword="") -> dict:
         page = max(1, int(page))
         page_size = min(100, max(1, int(page_size)))

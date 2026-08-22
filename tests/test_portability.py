@@ -52,6 +52,26 @@ class PortabilityTests(unittest.TestCase):
         self.assertIn("electron/dist/SmartKit-Simulator-1.0.0.exe", readme)
         self.assertIn("PyInstaller", readme)
         self.assertNotIn("build_exe.ps1", readme)
+        self.assertIn("--automation", readme)
+        self.assertIn("--management-port 5800", readme)
+
+    def test_electron_entrypoint_supports_automation_launch_contract(self):
+        source = (ROOT / "electron" / "main.js").read_text(encoding="utf-8")
+        self.assertIn('process.argv.includes("--automation")', source)
+        self.assertIn('commandLineValue("--management-port")', source)
+        self.assertIn('commandLineValue("--data-dir")', source)
+        self.assertIn('commandLineValue("--attach-management-url")', source)
+        self.assertIn('fullArgs.push("--management-port", String(managementPort))', source)
+
+    def test_electron_window_is_visible_while_management_page_loads(self):
+        source = (ROOT / "electron" / "main.js").read_text(encoding="utf-8")
+
+        self.assertIn("show: true", source)
+        self.assertNotIn('mainWindow.once("ready-to-show"', source)
+        self.assertIn("screen.getPrimaryDisplay().workArea", source)
+        self.assertIn("mainWindow.setBounds", source)
+        self.assertIn("mainWindow.show()", source)
+        self.assertIn("mainWindow.focus()", source)
 
 
 if __name__ == "__main__":

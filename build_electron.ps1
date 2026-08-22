@@ -6,52 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 $electronDir = Join-Path $root "electron"
-
-# ---- Helper: ensure 7za wrapper is in place ----
-function Use-7zaWrapper {
-    $sevenZipDir = Join-Path $electronDir "node_modules\7zip-bin\win\x64"
-    $orig = Join-Path $sevenZipDir "7za_orig.exe"
-    $wrapper = Join-Path $sevenZipDir "7za.exe"
-    $wrapperSrc = Join-Path $electronDir "7za_wrapper.cs"
-
-    # Already wrapped?
-    if (Test-Path $orig) {
-        Write-Host "[*] 7za wrapper already in place" -ForegroundColor Yellow
-        return
-    }
-
-    Write-Host "[*] Setting up 7za wrapper..." -ForegroundColor Yellow
-
-    # Compile wrapper if needed
-    $wrapperExe = Join-Path $sevenZipDir "7za_wrapper.exe"
-    if (-not (Test-Path $wrapperExe) -or (Get-Item $wrapperSrc).LastWriteTime -gt (Get-Item $wrapperExe).LastWriteTime) {
-        $csc = "C:\WINDOWS\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-        if (-not (Test-Path $csc)) {
-            throw "C# compiler not found at $csc. Install .NET Framework 4.x SDK."
-        }
-        Write-Host "  Compiling wrapper..." -ForegroundColor Gray
-        & $csc /target:exe /out:$wrapperExe /reference:System.dll $wrapperSrc
-        if ($LASTEXITCODE -ne 0) { throw "Compilation failed" }
-    }
-
-    # Rename original and copy wrapper
-    Rename-Item $wrapper "7za_orig.exe"
-    Copy-Item $wrapperExe $wrapper
-    Write-Host "[+] 7za wrapper installed" -ForegroundColor Green
-}
-
-# ---- Helper: restore original 7za ----
-function Restore-7zaOriginal {
-    $sevenZipDir = Join-Path $electronDir "node_modules\7zip-bin\win\x64"
-    $orig = Join-Path $sevenZipDir "7za_orig.exe"
-    $wrapper = Join-Path $sevenZipDir "7za.exe"
-
-    if (Test-Path $orig) {
-        Remove-Item $wrapper -Force -ErrorAction SilentlyContinue
-        Rename-Item $orig "7za.exe"
-        Write-Host "[*] 7za original restored" -ForegroundColor Yellow
-    }
-}
+. (Join-Path $root "build_tools\SevenZipWrapper.ps1")
 
 # ---- Main build ----
 Write-Host "========================================" -ForegroundColor Cyan
@@ -75,7 +30,7 @@ if (-not $SkipBackend) {
 Write-Host "[2/3] Building Electron package..." -ForegroundColor Cyan
 
 try {
-    Use-7zaWrapper
+    Use-7zaWrapper -ElectronDir $electronDir
 
     # Clean previous output
     $distDir = Join-Path $electronDir "dist"
@@ -92,7 +47,7 @@ try {
         Pop-Location
     }
 } finally {
-    Restore-7zaOriginal
+    Restore-7zaOriginal -ElectronDir $electronDir
 }
 
 # Step 3: Verify output

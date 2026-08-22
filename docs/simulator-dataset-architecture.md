@@ -104,7 +104,7 @@ flowchart LR
 
     subgraph Simulator["SmartKit Simulator"]
         UI["数据集工作台"]
-        Control["管理接口 :5800"]
+        Control["管理接口 :35800"]
         Catalog["用例目录与绑定模块"]
         DatasetModule["数据集模块"]
         Runtime["执行快照与租约模块"]
@@ -181,7 +181,7 @@ app-data/
   "dataset_directory": "D:\\SmartKit-Simulator\\datasets",
   "management_server": {
     "bind_address": "127.0.0.1",
-    "port": 5800
+    "port": 35800
   },
   "ssh_server": {
     "bind_address": "0.0.0.0",
@@ -439,7 +439,7 @@ release(execution_id) -> None
 ```json
 {
   "simulator": {
-    "management_url": "http://127.0.0.1:5800",
+    "management_url": "http://127.0.0.1:35800",
     "required": true,
     "activation_timeout_ms": 10000
   }

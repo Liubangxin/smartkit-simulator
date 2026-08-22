@@ -64,7 +64,7 @@ python -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe .\simulator_gui.py
 ```
 
-程序默认打开 `http://127.0.0.1:5800`。如果端口被占用，会自动在 `5801` 到 `5899` 中选择可用端口。
+程序默认打开 `http://127.0.0.1:35800`。如果端口被占用，会自动在 `35801` 到 `35899` 中选择可用端口。
 
 默认协议端点：
 
@@ -82,7 +82,8 @@ REST 服务首次启动时会生成本地自签名证书，并限制使用 TLS 1
 
 ## Windows 桌面版
 
-Electron 桌面版启动时会在后台运行 Python 模拟器后端，收到后端就绪端口后再打开主窗口。关闭桌面窗口时，后端进程也会随之结束。
+Electron 桌面版启动时会在后台运行 Python 模拟器后端，默认开放与 `management_url` 对应的
+`http://127.0.0.1:35800` 管理地址，收到后端就绪信号后再打开主窗口。关闭桌面窗口时，后端进程也会随之结束；需要使用其他端口时可通过 `--management-port` 显式覆盖。
 
 构建后的便携版不要求目标电脑安装 Python、Node.js 或项目依赖。便携版的运行数据默认保存在程序所在目录，包括：
 
@@ -95,7 +96,7 @@ Electron 桌面版启动时会在后台运行 Python 模拟器后端，收到后
 
 ```powershell
 .\SmartKit-Simulator-1.0.0.exe --automation `
-  --management-port 5800 `
+  --management-port 35800 `
   --data-dir D:\code\smartkit\simulator
 ```
 
@@ -105,7 +106,7 @@ Electron 桌面版启动时会在后台运行 Python 模拟器后端，收到后
 已有管理后端时，可以只打开并附着一个工作台窗口，不再启动第二个后端：
 
 ```powershell
-.\SmartKit-Simulator-1.0.0.exe --attach-management-url http://127.0.0.1:5800
+.\SmartKit-Simulator-1.0.0.exe --attach-management-url http://127.0.0.1:35800
 ```
 
 ## 数据集

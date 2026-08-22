@@ -111,7 +111,7 @@ const context = {
       ? {path: "D:/datasets", dataset_count: 1, invalid_count: 0}
       : url === "/api/settings"
         ? {...(options.method === "PUT" ? JSON.parse(options.body) : {}),
-           management_server: {bind_address: "127.0.0.1", port: 5800},
+           management_server: {bind_address: "127.0.0.1", port: 35800},
            ssh_server: options.method === "PUT" ? JSON.parse(options.body).ssh_server
              : {bind_address: "0.0.0.0", port: 22, username: "admin", password: "admin123"},
            rest_server: options.method === "PUT" ? JSON.parse(options.body).rest_server

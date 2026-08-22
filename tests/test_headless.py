@@ -109,7 +109,7 @@ class HeadlessModeTests(unittest.TestCase):
         # Without --headless, must NOT print SMARTKIT_READY_PORT (preserve original CLI behavior)
         proc, lines = self._spawn()
         try:
-            # Plain mode still does the 5800-5899 scan and prints "GUI running at ..."
+            # Plain mode still does the 35800-35899 scan and prints "GUI running at ..."
             deadline = time.time() + 30
             saw_gui = False
             while time.time() < deadline:

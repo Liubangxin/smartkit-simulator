@@ -3,7 +3,7 @@
   "schema_version": 1,
   "management_server": {
     "bind_address": "127.0.0.1",
-    "port": 5800
+    "port": 35800
   },
   "ssh_server": {
     "bind_address": "0.0.0.0",

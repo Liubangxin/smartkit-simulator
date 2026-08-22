@@ -53,7 +53,7 @@ class PortabilityTests(unittest.TestCase):
         self.assertIn("PyInstaller", readme)
         self.assertNotIn("build_exe.ps1", readme)
         self.assertIn("--automation", readme)
-        self.assertIn("--management-port 5800", readme)
+        self.assertIn("--management-port 35800", readme)
 
     def test_electron_entrypoint_supports_automation_launch_contract(self):
         source = (ROOT / "electron" / "main.js").read_text(encoding="utf-8")
@@ -62,6 +62,15 @@ class PortabilityTests(unittest.TestCase):
         self.assertIn('commandLineValue("--data-dir")', source)
         self.assertIn('commandLineValue("--attach-management-url")', source)
         self.assertIn('fullArgs.push("--management-port", String(managementPort))', source)
+
+    def test_electron_defaults_management_port_to_management_url_port(self):
+        source = (ROOT / "electron" / "main.js").read_text(encoding="utf-8")
+
+        self.assertIn("const DEFAULT_MANAGEMENT_PORT = 35800", source)
+        self.assertIn(
+            "if (configured === undefined) return DEFAULT_MANAGEMENT_PORT",
+            source,
+        )
 
     def test_electron_window_is_visible_while_management_page_loads(self):
         source = (ROOT / "electron" / "main.js").read_text(encoding="utf-8")

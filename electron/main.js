@@ -5,6 +5,7 @@ const fs = require("fs");
 const readline = require("readline");
 
 const READY_TIMEOUT_MS = 30000;
+const DEFAULT_MANAGEMENT_PORT = 35800;
 const AUTOMATION_MODE = process.argv.includes("--automation");
 
 let backendProcess = null;
@@ -54,7 +55,7 @@ function resolveDataDir() {
 
 function resolveManagementPort() {
   const configured = commandLineValue("--management-port");
-  if (configured === undefined) return null;
+  if (configured === undefined) return DEFAULT_MANAGEMENT_PORT;
   const port = Number(configured);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error("--management-port must be an integer between 1 and 65535");

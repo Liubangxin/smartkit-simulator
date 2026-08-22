@@ -56,7 +56,7 @@ DEFAULT_SERVER = {
 DEFAULT_REST_SERVER = {"bind_address": "127.0.0.1", "port": 8080}
 DEFAULT_APP_SETTINGS = {
     "schema_version": 1,
-    "management_server": {"bind_address": "127.0.0.1", "port": 5800},
+    "management_server": {"bind_address": "127.0.0.1", "port": 35800},
     "ssh_server": {"bind_address": "127.0.0.1", "port": 2222,
                    "username": "admin", "password": "admin123"},
     "rest_server": {"bind_address": "127.0.0.1", "port": 8080},
@@ -1115,8 +1115,8 @@ if __name__ == "__main__":
     if args.headless:
         run_headless(args.management_port)
     else:
-        port = 5800
-        for p in range(5800, 5900):
+        port = 35800
+        for p in range(35800, 35900):
             try:
                 s = socket.socket()
                 s.bind(("127.0.0.1", p))

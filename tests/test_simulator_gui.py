@@ -222,9 +222,10 @@ class SimulatorGuiSshTests(unittest.TestCase):
         def fake_run_server(*args):
             captured_args.append(args)
 
-        old_run_server = simulator_gui.run_server
+        from smartkit_simulator.application import application
+        old_runner = application.ssh_runner
         try:
-            simulator_gui.run_server = fake_run_server
+            application.ssh_runner = fake_run_server
             simulator_gui.save_config(
                 {
                     "server": {
@@ -261,7 +262,7 @@ class SimulatorGuiSshTests(unittest.TestCase):
             self.assertEqual("settings-user", captured_args[0][2])
             self.assertEqual("settings-pass", captured_args[0][3])
         finally:
-            simulator_gui.run_server = old_run_server
+            application.ssh_runner = old_runner
 
     def test_command_output_uses_crlf_line_endings_for_terminal_alignment(self):
         output = "first\nsecond\r\nthird"

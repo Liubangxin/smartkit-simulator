@@ -2,7 +2,7 @@
 
 > 状态：已完成首版代码实现  
 > 更新时间：2026-08-17  
-> 配套原型：[`prototype_dataset_ui_a_full.html`](../prototype_dataset_ui_a_full.html)
+> 配套原型：[`workbench.html`](../workbench.html)
 
 ## 1. 背景
 

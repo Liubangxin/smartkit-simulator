@@ -5,17 +5,12 @@ SmartKit Simulator 是面向自动化测试和设备联调的本地模拟器。�
 项目由 Python 后端、Web 数据集工作台和 Electron Windows 桌面外壳组成，既可从源码运行，也可构建为无需安装 Python 或 Node.js 的便携版程序。
 
 ## 核心功能
-
-- 一个数据集对应一个独立 JSON 文件，完整保存 SSH 和 REST 模拟数据。
-- 数据集支持搜索、分页、新建、复制、导入、导出、目录切换和重新扫描。
-- SSH/REST 监听地址和端口由全局设置统一持久化，不随数据集切换。
-- SSH 命令与 REST 路由支持分组、新增、编辑、移动和删除。
-- 可从执行日志批量解析 SSH 命令、REST 路由及响应，经预览后导入。
-- 测试用例可以绑定数据集，并在执行前通过 API 激活不可变快照。
+- SSH 模拟：支持密码认证、Shell 和 Exec 两种调用方式，按照完整命令精确匹配响应。
+- REST 模拟：提供 HTTPS 服务，按照“HTTP 方法 + URI”匹配路由。
+- 构建模拟器：可从执行日志批量解析 SSH 命令、REST 路由及响应，经预览后导入。
+- 数据模型：一个模拟器对应一个数据集，一个数据集对应一个独立 JSON 文件，完整保存 SSH 和 REST 模拟数据。
+- 用例与数据集关系：测试用例可以绑定数据集，并在执行前通过 API 激活不可变快照。
 - 活动快照与工作台编辑隔离，运行中的测试不会读到中途修改的数据。
-- 数据集保存使用 `revision` 乐观锁和临时文件原子替换。
-- 提供实时运行日志、SSH/REST 服务控制和 REST 路由测试工具。
-- 支持构建 Windows x64 Electron 便携版单文件程序。
 
 ## 工作原理
 
@@ -409,9 +404,23 @@ Pop-Location
 
 ```text
 simulator/
-├── simulator_gui.py                    # Flask API、SSH/REST 服务和运行快照
-├── dataset_workspace.py                # 数据集、用例绑定和原子持久化
-├── prototype_dataset_ui_a_full.html    # 当前生产数据集工作台与运行界面
+├── simulator_gui.py                    # 兼容入口 shim，转发到 smartkit_simulator 包
+├── smartkit_simulator/                 # Python 后端包，按职责分层
+│   ├── application.py                  # 进程级单例状态（数据目录、日志、协议服务、运行快照）
+│   ├── app.py                          # Flask 应用工厂
+│   ├── api/                            # Flask 蓝图：数据集 / 用例绑定 / 运行 / 服务控制 / 日志导入 / 设置
+│   ├── workspace/store.py              # 数据集文件、用例绑定与原子持久化
+│   ├── runtime/state.py                # 执行快照与租约（同一时间一个活动快照）
+│   ├── ssh/                            # SSH 模拟服务与输出渲染
+│   ├── rest/                           # REST HTTPS 模拟服务与纯路由匹配
+│   ├── import_logs/                    # SSH 命令 / REST 路由日志解析器（纯函数）
+│   ├── settings.py                     # 全局设置（settings.json）
+│   ├── legacy.py                       # 旧 config.json 兼容与迁移
+│   ├── security/tls.py                 # REST 自签名 TLS 证书
+│   └── __main__.py                     # CLI 入口（python -m smartkit_simulator）
+├── dataset_workspace.py                # 兼容 shim，重导出 workspace.store
+├── server.py                           # 独立 SSH 演示入口（薄启动器）
+├── workbench.html                       # 当前生产数据集工作台与运行界面
 ├── index.html                          # 早期单配置界面，保留兼容与测试
 ├── datasets/                           # 默认数据集目录
 ├── docs/
@@ -425,7 +434,19 @@ simulator/
 └── requirements.txt                    # Python 运行与构建依赖
 ```
 
-`run.ps1` 和 `server.py` 属于早期 CLI SSH 模式；新功能应优先使用 `simulator_gui.py`。
+`run.ps1` 与 `server.py` 属于早期 CLI SSH 模式；`server.py` 现为薄启动器，实现位于 `smartkit_simulator/ssh/standalone.py`，新功能应优先使用 `simulator_gui.py`（即 `smartkit_simulator/` 包）。
+
+## 重构记录（2026-08-31）
+
+将单模块后端正本 `simulator_gui.py`（约 1100 行）拆分为 `smartkit_simulator/` 包，根目录文件保留为兼容入口，外部行为与契约不变。
+
+- **按职责分层**：管理 API（`api/` 蓝图）只做参数校验与 HTTP 编码；`workspace/` 负责数据集文件与用例绑定；`runtime/` 负责执行快照与租约；`ssh/`、`rest/` 实现模拟协议服务；`import_logs/` 提供日志解析；`settings.py`、`legacy.py`、`security/` 负责全局设置、旧配置兼容与 TLS 证书。
+- **状态收敛**：原模块级全局变量（`runtime_snapshot`、`stop_event`、`server_thread`、`rest_server` 等）收敛为 `application.py` 中的 `ApplicationState` 单例；SSH/REST 服务通过 `state.active_config()` 读取活动快照，协议层与 API 层解耦。
+- **应用工厂**：`app.py` 提供 `create_app(state)`，测试可用独立状态构建 Flask 应用，不再依赖修改全局变量复位。
+- **纯函数集中**：REST 路由匹配、路径参数替换、命令输出渲染、日志解析均为无副作用纯函数，可独立单测。
+- **入口兼容**：`simulator_gui.py`、`dataset_workspace.py` 为 shim，Electron、PyInstaller、`start_gui.ps1` 与现有测试无需改动；`server.py` 瘦身为独立 SSH 演示入口。
+- **前端**：生产界面仍为单文件 `workbench.html`（由 `prototype_dataset_ui_a_full.html` 更名而来），仅补充内部分区注释，无行为改动。
+- **验证**：`python -m unittest discover -s tests`（55 项）与两个 Node 前端测试全部通过；`--headless` 就绪信号、管理 API、PyInstaller 冻结构建产物均验证正常，数据集 schema、管理 API、SSH/REST 模拟协议与 `SMARTKIT_READY_PORT` 信号保持不变。
 
 ## 安全与使用限制
 

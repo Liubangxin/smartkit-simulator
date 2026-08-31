@@ -2,7 +2,7 @@ const assert = require("assert");
 const fs = require("fs");
 const vm = require("vm");
 
-const html = fs.readFileSync("prototype_dataset_ui_a_full.html", "utf8");
+const html = fs.readFileSync("workbench.html", "utf8");
 const script = html.match(/<script>([\s\S]*)<\/script>/)[1];
 
 assert.doesNotThrow(() => new Function(script));

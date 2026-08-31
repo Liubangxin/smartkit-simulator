@@ -9,7 +9,6 @@ Layered layout (dependency direction: api -> services -> pure helpers):
     ssh/  rest/  - simulated protocol servers (read the active snapshot)
     import_logs/ - execution-log parsers (SSH commands / REST routes)
     settings.py  - global settings persisted in settings.json
-    legacy.py    - legacy single config.json support (/api/config, migration)
     security/    - self-signed TLS certificate generation
 """
 

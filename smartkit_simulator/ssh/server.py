@@ -116,9 +116,18 @@ class SimulatorServer(paramiko.ServerInterface):
                 channel.send(f"Unknown command: {command}\r\n".encode())
             channel.send_exit_status(0)
         except Exception:
-            channel.send_exit_status(1)
+            try:
+                channel.send_exit_status(1)
+            except Exception:
+                pass
         finally:
-            channel.close()
+            # Signal EOF and let the client close the channel.  Closing eagerly
+            # here races with paramiko's exec confirmation (MSG_CHANNEL_SUCCESS)
+            # and makes the client report "Channel closed".
+            try:
+                channel.shutdown_write()
+            except Exception:
+                pass
 
 
 def run_server(bind_address, port, username, password, commands, server_stop_event=None, *, state=None):

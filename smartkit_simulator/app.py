@@ -8,12 +8,12 @@ state object.
 
 from flask import Flask
 
-from .api import cases, config, datasets, import_logs, index, logs, runtime, servers, settings
+from .api import cases, datasets, import_logs, index, logs, runtime, servers, settings
 
 
 def create_app(state):
     app = Flask(__name__)
     for module in (index, datasets, cases, runtime, servers,
-                   import_logs, settings, config, logs):
+                   import_logs, settings, logs):
         app.register_blueprint(module.register(state))
     return app

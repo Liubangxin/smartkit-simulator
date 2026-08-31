@@ -24,17 +24,40 @@ def free_port():
 
 
 class SimulatorGuiSshTests(unittest.TestCase):
+    """SSH simulator tests drive the protocol through activated dataset snapshots.
+
+    Simulated data only ever comes from an activated dataset; there is no
+    legacy config.json fallback anymore.
+    """
+
+    USERNAME = "admin"
+    PASSWORD = "admin123"
+
     def setUp(self):
-        original_config = simulator_gui.load_config()
         self.tempdir = tempfile.TemporaryDirectory()
+        self.datasets = Path(self.tempdir.name) / "datasets"
         simulator_gui.set_data_dir(self.tempdir.name)
-        simulator_gui.save_config(original_config)
+        self.client = simulator_gui.app.test_client()
+        self.client.post("/api/dataset-directory/switch", json={"path": str(self.datasets)})
 
     def tearDown(self):
         simulator_gui.stop_event.set()
         time.sleep(1.2)
+        simulator_gui.reset_runtime_state()
         simulator_gui.set_data_dir(str(ROOT))
         self.tempdir.cleanup()
+
+    def create_dataset(self, dataset_id, commands):
+        response = self.client.post("/api/datasets", json={
+            "id": dataset_id, "name": dataset_id,
+            "commands": commands, "rest_routes": []})
+        self.assertEqual(201, response.status_code, response.get_json())
+        return response.get_json()
+
+    def activate(self, dataset_id, execution_id):
+        response = self.client.post("/api/runtime/activate-dataset", json={
+            "dataset_id": dataset_id, "execution_id": execution_id})
+        self.assertEqual(200, response.status_code, response.get_json())
 
     def exec_command(self, port, username, password, command):
         client = paramiko.SSHClient()
@@ -58,162 +81,95 @@ class SimulatorGuiSshTests(unittest.TestCase):
             client.close()
 
     def test_exec_command_over_ssh_returns_configured_output(self):
-        config = simulator_gui.load_config()
         port = free_port()
+        command = {"name": "show system general", "description": "查询系统信息",
+                   "output": "System Name: OceanStor_24A.Storage\nHealth Status: Normal"}
+        dataset = self.create_dataset("ssh-demo", [command])
+        self.activate("ssh-demo", "run-1")
         simulator_gui.stop_event.clear()
         threading.Thread(
             target=simulator_gui.run_server,
-            args=(
-                "127.0.0.1",
-                port,
-                config["server"]["username"],
-                config["server"]["password"],
-                list(config["commands"]),
-            ),
+            args=("127.0.0.1", port, self.USERNAME, self.PASSWORD,
+                  list(dataset["commands"])),
             daemon=True,
         ).start()
         time.sleep(1.0)
 
         stdout, stderr = self.exec_command(
-            port,
-            config["server"]["username"],
-            config["server"]["password"],
-            "show system general",
-        )
+            port, self.USERNAME, self.PASSWORD, "show system general")
 
         self.assertEqual("", stderr)
-        configured = next(item for item in config["commands"]
-                          if item["name"] == "show system general")
-        expected_first_line = configured["output"].strip().splitlines()[0]
-        self.assertIn(expected_first_line, stdout)
+        self.assertIn("System Name: OceanStor_24A.Storage", stdout)
 
-    def test_running_server_uses_saved_command_output_changes(self):
-        original_config = simulator_gui.load_config()
+    def test_running_server_serves_immutable_activated_snapshot(self):
         port = free_port()
-        command_name = "show system general"
         old_output = "old output " + uuid.uuid4().hex
         new_output = "new output " + uuid.uuid4().hex
-        test_config = {
-            "server": {
-                "port": port,
-                "username": original_config["server"]["username"],
-                "password": original_config["server"]["password"],
-            },
-            "commands": [
-                {
-                    "name": command_name,
-                    "description": "test command",
-                    "output": old_output,
-                }
-            ],
-        }
+        dataset = self.create_dataset("ssh-snap", [
+            {"name": "show status", "description": "", "output": old_output}])
+        self.activate("ssh-snap", "run-snap")
+        simulator_gui.stop_event.clear()
+        threading.Thread(
+            target=simulator_gui.run_server,
+            args=("127.0.0.1", port, self.USERNAME, self.PASSWORD,
+                  list(dataset["commands"])),
+            daemon=True,
+        ).start()
+        time.sleep(1.0)
 
-        try:
-            simulator_gui.save_config(test_config)
-            simulator_gui.stop_event.clear()
-            threading.Thread(
-                target=simulator_gui.run_server,
-                args=(
-                    "127.0.0.1",
-                    port,
-                    test_config["server"]["username"],
-                    test_config["server"]["password"],
-                    list(test_config["commands"]),
-                ),
-                daemon=True,
-            ).start()
-            time.sleep(1.0)
+        dataset["commands"][0]["output"] = new_output
+        updated = self.client.put("/api/datasets/ssh-snap", json=dataset)
+        self.assertEqual(200, updated.status_code, updated.get_json())
 
-            saved_config = {
-                "server": dict(test_config["server"]),
-                "commands": [
-                    {
-                        "name": command_name,
-                        "description": "test command",
-                        "output": new_output,
-                    }
-                ],
-            }
-            simulator_gui.save_config(saved_config)
-            stdout, stderr = self.exec_command(
-                port,
-                test_config["server"]["username"],
-                test_config["server"]["password"],
-                command_name,
-            )
+        stdout, stderr = self.exec_command(port, self.USERNAME, self.PASSWORD, "show status")
+        self.assertEqual("", stderr)
+        self.assertIn(old_output, stdout)
+        self.assertNotIn(new_output, stdout)
 
-            self.assertEqual("", stderr)
-            self.assertIn(new_output, stdout)
-            self.assertNotIn(old_output, stdout)
-        finally:
-            simulator_gui.save_config(original_config)
-
-    def test_stop_then_start_waits_for_restart_and_uses_saved_output(self):
-        original_config = simulator_gui.load_config()
+    def test_stop_then_start_waits_for_restart_and_uses_reactivated_data(self):
         port = free_port()
-        command_name = "show system general"
         old_output = "old restart output " + uuid.uuid4().hex
         new_output = "new restart output " + uuid.uuid4().hex
-        username = original_config["server"]["username"]
-        password = original_config["server"]["password"]
+        self.create_dataset("ssh-restart", [
+            {"name": "show version", "description": "", "output": old_output}])
+        self.activate("ssh-restart", "run-a")
 
-        try:
-            simulator_gui.save_config(
-                {
-                    "server": {"port": port, "username": username, "password": password},
-                    "commands": [
-                        {
-                            "name": command_name,
-                            "description": "test command",
-                            "output": old_output,
-                        }
-                    ],
-                }
-            )
-            client = simulator_gui.app.test_client()
-            client.post(
-                "/api/server/start",
-                json={"port": port, "username": username, "password": password},
-            )
-            time.sleep(1.0)
+        start = self.client.post("/api/server/start", json={"port": port})
+        self.assertEqual(200, start.status_code, start.get_json())
+        time.sleep(1.0)
 
-            simulator_gui.save_config(
-                {
-                    "server": {"port": port, "username": username, "password": password},
-                    "commands": [
-                        {
-                            "name": command_name,
-                            "description": "test command",
-                            "output": new_output,
-                        }
-                    ],
-                }
-            )
-            client.post("/api/server/stop")
-            start_response = client.post(
-                "/api/server/start",
-                json={"port": port, "username": username, "password": password},
-            )
-            time.sleep(1.0)
+        stdout, stderr = self.exec_command(port, self.USERNAME, self.PASSWORD, "show version")
+        self.assertEqual("", stderr)
+        self.assertIn(old_output, stdout)
 
-            stdout, stderr = self.exec_command(port, username, password, command_name)
+        released = self.client.post("/api/runtime/release", json={"execution_id": "run-a"})
+        self.assertEqual(200, released.status_code, released.get_json())
+        dataset = self.client.get("/api/datasets/ssh-restart").get_json()
+        dataset["commands"][0]["output"] = new_output
+        updated = self.client.put("/api/datasets/ssh-restart", json=dataset)
+        self.assertEqual(200, updated.status_code, updated.get_json())
+        self.activate("ssh-restart", "run-b")
 
-            self.assertEqual(200, start_response.status_code)
-            self.assertEqual("", stderr)
-            self.assertIn(new_output, stdout)
-            self.assertNotIn(old_output, stdout)
-            logs = []
-            while True:
-                try:
-                    logs.append(simulator_gui.log_queue.get_nowait())
-                except Exception:
-                    break
-            self.assertFalse(
-                any("Cannot bind port" in log for log in logs),
-                "\n".join(logs),
-            )
-        finally:
-            simulator_gui.save_config(original_config)
+        self.client.post("/api/server/stop")
+        start = self.client.post("/api/server/start", json={"port": port})
+        self.assertEqual(200, start.status_code, start.get_json())
+        time.sleep(1.0)
+
+        stdout, stderr = self.exec_command(port, self.USERNAME, self.PASSWORD, "show version")
+        self.assertEqual("", stderr)
+        self.assertIn(new_output, stdout)
+        self.assertNotIn(old_output, stdout)
+
+        logs = []
+        while True:
+            try:
+                logs.append(simulator_gui.log_queue.get_nowait())
+            except Exception:
+                break
+        self.assertFalse(
+            any("Cannot bind port" in log for log in logs),
+            "\n".join(logs),
+        )
 
     def test_start_api_saves_bind_address_and_passes_it_to_server(self):
         port = free_port()
@@ -226,16 +182,6 @@ class SimulatorGuiSshTests(unittest.TestCase):
         old_runner = application.ssh_runner
         try:
             application.ssh_runner = fake_run_server
-            simulator_gui.save_config(
-                {
-                    "server": {
-                        "port": 2222,
-                        "username": "legacy-user",
-                        "password": "legacy-pass",
-                    },
-                    "commands": [],
-                }
-            )
             simulator_gui.save_app_settings({
                 "ssh_server": {"username": "settings-user",
                                "password": "settings-pass"},
@@ -274,12 +220,12 @@ class SimulatorGuiSshTests(unittest.TestCase):
 
     def test_resource_path_uses_project_directory(self):
         self.assertEqual(
-            str(ROOT / "index.html"),
-            simulator_gui.resource_path("index.html"),
+            str(ROOT / "workbench.html"),
+            simulator_gui.resource_path("workbench.html"),
         )
 
-    def test_gui_index_html_exists_for_development_startup(self):
-        self.assertTrue((ROOT / "index.html").exists())
+    def test_gui_workbench_exists_for_development_startup(self):
+        self.assertTrue((ROOT / "workbench.html").exists())
 
 
 if __name__ == "__main__":

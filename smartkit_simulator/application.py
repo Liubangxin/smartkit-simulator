@@ -3,10 +3,10 @@
 A single ``ApplicationState`` instance wires the package together and replaces
 the old module-level globals of ``simulator_gui.py``:
 
-* data-dir dependent paths (config.json, host_key, TLS certs)
+* data-dir dependent paths (settings.json, host_key, TLS certs)
 * the runtime log queue and protocol server thread handles
 * the runtime snapshot/lease state
-* legacy config + settings helpers
+* settings helpers
 
 The root ``simulator_gui.py`` shim re-exports these objects so Electron,
 PyInstaller, docs and the existing test suite keep working unchanged.
@@ -16,7 +16,6 @@ import os
 import queue
 import threading
 
-from . import legacy
 from . import paths
 from . import settings as settings_mod
 from .app import create_app
@@ -41,8 +40,7 @@ class ApplicationState:
         self.rest_server = None
         self.rest_thread = None
         self.rest_lock = threading.Lock()
-        self.runtime = RuntimeState(self.data_dir,
-                                    fallback_config=lambda: legacy.load_config(self))
+        self.runtime = RuntimeState(self.data_dir)
         #: SSH runner hook; API route / server/start and tests may override it.
         self.ssh_runner = run_server
 
@@ -66,12 +64,6 @@ class ApplicationState:
 
     def active_config(self):
         return self.runtime.active_config()
-
-    def load_config(self):
-        return legacy.load_config(self)
-
-    def save_config(self, config):
-        return legacy.save_config(self, config)
 
     def load_app_settings(self):
         return settings_mod.load_app_settings(self)

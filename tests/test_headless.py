@@ -53,36 +53,42 @@ class HeadlessModeTests(unittest.TestCase):
         proc, lines = self._spawn("--headless")
         try:
             port = self._wait_ready(proc, lines)
-            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/config", timeout=5) as r:
-                data = json.load(r)
-            self.assertIn("commands", data)
-            self.assertIn("server", data)
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/runtime/health", timeout=5
+            ) as r:
+                self.assertEqual("ready", json.load(r)["status"])
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/settings", timeout=5
+            ) as r:
+                settings = json.load(r)
+            self.assertIn("ssh_server", settings)
+            self.assertIn("rest_server", settings)
         finally:
             proc.terminate()
             proc.wait(timeout=10)
 
-    def test_headless_writes_config_to_data_dir(self):
+    def test_headless_writes_settings_to_data_dir(self):
         with tempfile.TemporaryDirectory() as d:
             proc, lines = self._spawn("--headless", "--data-dir", d)
             try:
                 port = self._wait_ready(proc, lines)
                 payload = {
-                    "server": {"bind_address": "127.0.0.1", "port": 2222,
-                               "username": "admin", "password": "admin123"},
-                    "commands": [{"name": "test cmd", "description": "d", "output": "o"}],
+                    "ssh_server": {"bind_address": "127.0.0.1", "port": 2222,
+                                   "username": "admin", "password": "admin123"},
                 }
                 req = urllib.request.Request(
-                    f"http://127.0.0.1:{port}/api/config",
+                    f"http://127.0.0.1:{port}/api/settings",
                     data=json.dumps(payload).encode("utf-8"),
                     headers={"Content-Type": "application/json"},
-                    method="POST",
+                    method="PUT",
                 )
                 with urllib.request.urlopen(req, timeout=5) as r:
                     self.assertEqual(200, r.status)
-                config_path = Path(d) / "config.json"
-                self.assertTrue(config_path.exists(), "config.json must be written to --data-dir")
-                saved = json.loads(config_path.read_text(encoding="utf-8"))
-                self.assertEqual("test cmd", saved["commands"][0]["name"])
+                settings_path = Path(d) / "settings.json"
+                self.assertTrue(settings_path.exists(),
+                                "settings.json must be written to --data-dir")
+                saved = json.loads(settings_path.read_text(encoding="utf-8"))
+                self.assertEqual("admin", saved["ssh_server"]["username"])
             finally:
                 proc.terminate()
                 proc.wait(timeout=10)

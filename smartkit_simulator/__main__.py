@@ -19,7 +19,7 @@ def parse_args(argv=None):
     parser.add_argument("--headless", action="store_true",
                         help="Run without browser; print SMARTKIT_READY_PORT=<port>")
     parser.add_argument("--data-dir", default=None,
-                        help="Directory for config.json and host_key")
+                        help="Directory for writable data (settings, host key, certificates)")
     parser.add_argument("--management-port", type=int, default=None,
                         help="Fixed management port for automation; fail if unavailable")
     return parser.parse_args(argv)

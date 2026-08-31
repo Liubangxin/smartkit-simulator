@@ -20,7 +20,7 @@ def register(state):
         dataset_id = str(payload.get("dataset_id", "")).strip()
         try:
             source = (state.dataset_workspace().get_dataset(dataset_id)
-                      if dataset_id else state.load_config())
+                      if dataset_id else {})
         except FileNotFoundError:
             return jsonify({"status": "error", "message": "数据集不存在"}), 404
         except WorkspaceError as error:
@@ -57,7 +57,7 @@ def register(state):
         dataset_id = str(payload.get("dataset_id", "")).strip()
         try:
             source = (state.dataset_workspace().get_dataset(dataset_id)
-                      if dataset_id else state.load_config())
+                      if dataset_id else {})
         except FileNotFoundError:
             return jsonify({"status": "error", "message": "数据集不存在"}), 404
         except WorkspaceError as error:

@@ -68,9 +68,7 @@ $pyinstallerArgs = @(
     "--clean",
     "--distpath", $distBackend,
     "--name", "simulator_gui",
-    "--add-data", "index.html;.",
     "--add-data", "workbench.html;.",
-    "--add-data", "config.json;.",
     "simulator_gui.py"
 )
 

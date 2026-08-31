@@ -504,6 +504,8 @@ flowchart TB
 4. 校验并激活 `default.json`，保持升级前行为。
 5. 保留旧 `config.json` 备份，但不再作为运行数据源。
 
+> 2026-08-31 重构后：`config.json` 已彻底移除（不再随程序分发），`/api/config` 接口与旧 `index.html` 界面一并退役。迁移逻辑仍保留在 `workspace/store.py`——只有用户数据目录中存在旧文件时才触发。模拟器空闲（未激活数据集）时 SSH/REST 返回空响应（SSH `Unknown command`、REST `404`），模拟数据只来自激活的数据集。
+
 ## 15. 实施阶段建议
 
 ### 阶段一：数据层

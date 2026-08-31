@@ -19,7 +19,6 @@ from smartkit_simulator.import_logs.common import log_thread_id
 from smartkit_simulator.import_logs.rest_parser import parse_rest_routes_from_log
 from smartkit_simulator.import_logs.ssh_parser import (clean_ssh_received_output,
                                                        parse_ssh_commands_from_log)
-from smartkit_simulator.legacy import normalize_groups
 from smartkit_simulator.paths import BASE_DIR, resource_path
 from smartkit_simulator.rest.matching import (REST_METHODS, REST_PATH_PARAM,
                                               match_rest_route, substitute_path_parameters)
@@ -69,14 +68,6 @@ def active_config():
 
 def reset_runtime_state():
     _application.reset_runtime_state()
-
-
-def load_config():
-    return _application.load_config()
-
-
-def save_config(config):
-    return _application.save_config(config)
 
 
 def load_app_settings():

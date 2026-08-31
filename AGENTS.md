@@ -24,7 +24,7 @@ SmartKit Simulator 是一个面向自动化测试和设备联调的本地存储�
 - Paramiko：SSH 模拟服务。
 - cryptography：生成 REST 服务自签名 TLS 证书。
 - Werkzeug：内嵌 WSGI 服务器（`make_server`）。
-- 前端：原生 HTML/CSS/JS 单文件，无前端构建框架。当前生产界面是 `workbench.html`，`index.html` 是早期兼容界面。
+- 前端：原生 HTML/CSS/JS 单文件，无前端构建框架。当前生产界面是 `workbench.html`。
 - Electron 31 + electron-builder：Windows 桌面外壳与便携版打包。
 - PyInstaller：把 Python 后端打包为单个 `simulator_gui.exe`。
 - 测试：Python `unittest` 覆盖后端；Node.js 脚本对前端 HTML/JS 做静态和交互测试。
@@ -34,17 +34,16 @@ SmartKit Simulator 是一个面向自动化测试和设备联调的本地存储�
 - `simulator_gui.py`：后端兼容入口 shim，转发到 `smartkit_simulator` 包（Electron、PyInstaller、`start_gui.ps1` 与测试都从这里进入）。
 - `smartkit_simulator/`：Python 后端包，按职责分层：
   - `application.py`：进程级单例状态（数据目录、日志队列、协议服务线程句柄、运行快照），取代旧的模块级全局变量。
-  - `app.py` / `api/`：Flask 应用工厂与蓝图（datasets / cases / runtime / servers / import_logs / settings / config / logs / index）。
+  - `app.py` / `api/`：Flask 应用工厂与蓝图（datasets / cases / runtime / servers / import_logs / settings / logs / index）。
   - `workspace/store.py`：数据集目录扫描、单文件 JSON CRUD、原子写入、用例目录与绑定、分页。
   - `runtime/state.py`：执行快照与租约状态（同一时间只允许一个活动快照）。
   - `ssh/`：Paramiko 模拟服务与输出渲染；`rest/`：REST HTTPS 模拟服务与纯路由匹配。
   - `import_logs/`：SSH 命令与 REST 路由的执行日志解析器（纯函数）。
-  - `settings.py` / `legacy.py` / `security/`：全局设置、旧 `config.json` 兼容、TLS 证书。
+  - `settings.py` / `security/`：全局设置（settings.json）、TLS 证书。
   - `__main__.py`：`--headless` 与 `--data-dir` CLI 入口（`python -m smartkit_simulator`）。
 - `dataset_workspace.py`：兼容 shim，重导出 `smartkit_simulator.workspace.store`。
 - `server.py`：独立 SSH 演示入口（薄启动器，供 `run.ps1` 使用），实现位于 `smartkit_simulator/ssh/standalone.py`。
 - `workbench.html`：当前生产数据集工作台和模拟器运行界面，由 `/` 路由直接返回；单文件内部已按状态 / 模板 / 交互 / API / 初始化分区。
-- `index.html`：早期兼容界面，仍保留用于兼容性测试。
 - `electron/`：Electron 外壳，启动后端并读取 `SMARTKIT_READY_PORT` 信号后打开主窗口。
 - `build_backend.ps1` / `build_electron.ps1`：PyInstaller 与 Electron 打包脚本。
 - `tests/`：Python `unittest` 测试与 Node.js 前端测试。
@@ -76,7 +75,6 @@ Headless 模式（供 Electron 外壳使用）：
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests
 node .\tests\test_production_ui.js
-node .\tests\test_index_html.js
 ```
 
 构建 Windows 桌面应用：

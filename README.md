@@ -318,12 +318,6 @@ finally:
 node .\tests\test_production_ui.js
 ```
 
-运行早期兼容界面测试：
-
-```powershell
-node .\tests\test_index_html.js
-```
-
 测试覆盖数据集持久化与冲突、用例绑定、运行快照、SSH/REST 服务、日志导入、桌面便携性和前端主要交互。
 
 ## 构建 Windows 桌面应用
@@ -415,13 +409,11 @@ simulator/
 │   ├── rest/                           # REST HTTPS 模拟服务与纯路由匹配
 │   ├── import_logs/                    # SSH 命令 / REST 路由日志解析器（纯函数）
 │   ├── settings.py                     # 全局设置（settings.json）
-│   ├── legacy.py                       # 旧 config.json 兼容与迁移
 │   ├── security/tls.py                 # REST 自签名 TLS 证书
 │   └── __main__.py                     # CLI 入口（python -m smartkit_simulator）
 ├── dataset_workspace.py                # 兼容 shim，重导出 workspace.store
 ├── server.py                           # 独立 SSH 演示入口（薄启动器）
 ├── workbench.html                       # 当前生产数据集工作台与运行界面
-├── index.html                          # 早期单配置界面，保留兼容与测试
 ├── datasets/                           # 默认数据集目录
 ├── docs/
 │   ├── simulator-dataset-architecture.md
@@ -446,7 +438,8 @@ simulator/
 - **纯函数集中**：REST 路由匹配、路径参数替换、命令输出渲染、日志解析均为无副作用纯函数，可独立单测。
 - **入口兼容**：`simulator_gui.py`、`dataset_workspace.py` 为 shim，Electron、PyInstaller、`start_gui.ps1` 与现有测试无需改动；`server.py` 瘦身为独立 SSH 演示入口。
 - **前端**：生产界面仍为单文件 `workbench.html`（由 `prototype_dataset_ui_a_full.html` 更名而来），仅补充内部分区注释，无行为改动。
-- **验证**：`python -m unittest discover -s tests`（55 项）与两个 Node 前端测试全部通过；`--headless` 就绪信号、管理 API、PyInstaller 冻结构建产物均验证正常，数据集 schema、管理 API、SSH/REST 模拟协议与 `SMARTKIT_READY_PORT` 信号保持不变。
+- **遗留移除**：删除旧 `config.json` 单配置体系——`/api/config` 接口、`index.html` 旧界面及其测试一并退役；模拟器空闲（未激活数据集）时 SSH/REST 返回空响应，模拟数据只来自激活的数据集。
+- **验证**：`python -m unittest discover -s tests`（55 项）与 Node 前端测试全部通过；`--headless` 就绪信号、管理 API、PyInstaller 冻结构建产物均验证正常，数据集 schema、管理 API、SSH/REST 模拟协议与 `SMARTKIT_READY_PORT` 信号保持不变。
 
 ## 安全与使用限制
 

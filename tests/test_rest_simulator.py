@@ -20,31 +20,40 @@ def free_port():
         return sock.getsockname()[1]
 
 
+REST_ROUTES = [{
+    "method": "GET", "uri": "/api/device/info", "status_code": 201,
+    "response_headers": {"Content-Type": "application/json", "X-Simulator": "SmartKit"},
+    "response_body": '{"status":"normal"}',
+}, {
+    "method": "POST", "uri": "/api/device/info", "status_code": 204,
+    "response_headers": {}, "response_body": "",
+}, {
+    "method": "GET", "uri": "/redfish/v1/Sessions/{session_id}", "status_code": 200,
+    "response_headers": {"Location": "/redfish/v1/Sessions/{session_id}"},
+    "response_body": '{"id":"{session_id}"}',
+}, {
+    "method": "GET", "uri": "/redfish/v1/Sessions/current", "status_code": 200,
+    "response_headers": {}, "response_body": '{"kind":"exact"}',
+}]
+
+
 class RestSimulatorTests(unittest.TestCase):
+    """REST simulator tests serve routes from an activated dataset snapshot."""
+
     def setUp(self):
-        self.original = simulator_gui.load_config()
         self.tempdir = tempfile.TemporaryDirectory()
+        self.datasets = Path(self.tempdir.name) / "datasets"
         simulator_gui.set_data_dir(self.tempdir.name)
         self.port = free_port()
-        config = dict(self.original)
-        config["rest_server"] = {"bind_address": "127.0.0.1", "port": self.port}
-        config["rest_routes"] = [{
-            "method": "GET", "uri": "/api/device/info", "status_code": 201,
-            "response_headers": {"Content-Type": "application/json", "X-Simulator": "SmartKit"},
-            "response_body": '{"status":"normal"}',
-        }, {
-            "method": "POST", "uri": "/api/device/info", "status_code": 204,
-            "response_headers": {}, "response_body": "",
-        }, {
-            "method": "GET", "uri": "/redfish/v1/Sessions/{session_id}", "status_code": 200,
-            "response_headers": {"Location": "/redfish/v1/Sessions/{session_id}"},
-            "response_body": '{"id":"{session_id}"}',
-        }, {
-            "method": "GET", "uri": "/redfish/v1/Sessions/current", "status_code": 200,
-            "response_headers": {}, "response_body": '{"kind":"exact"}',
-        }]
-        simulator_gui.save_config(config)
-        response = simulator_gui.app.test_client().post(
+        self.client = simulator_gui.app.test_client()
+        self.client.post("/api/dataset-directory/switch", json={"path": str(self.datasets)})
+        created = self.client.post("/api/datasets", json={
+            "id": "rest", "name": "rest", "commands": [], "rest_routes": REST_ROUTES})
+        self.assertEqual(201, created.status_code, created.get_json())
+        activated = self.client.post("/api/runtime/activate-dataset", json={
+            "dataset_id": "rest", "execution_id": "rest-setup"})
+        self.assertEqual(200, activated.status_code, activated.get_json())
+        response = self.client.post(
             "/api/rest/start", json={"bind_address": "127.0.0.1", "port": self.port})
         self.assertEqual(200, response.status_code)
         self.start_result = response.get_json()
@@ -54,7 +63,6 @@ class RestSimulatorTests(unittest.TestCase):
         simulator_gui.stop_rest_server_thread()
         simulator_gui.reset_runtime_state()
         simulator_gui.set_data_dir(str(ROOT))
-        simulator_gui.save_config(self.original)
         self.tempdir.cleanup()
 
     def request(self, path, method="GET"):
@@ -136,43 +144,25 @@ class RestSimulatorTests(unittest.TestCase):
         with self.request("/redfish/v1/Sessions/current") as response:
             self.assertEqual({"kind": "exact"}, json.load(response))
 
-    def test_routes_are_hot_reloaded_from_config(self):
-        config = simulator_gui.load_config()
-        config["rest_routes"][0]["response_body"] = '{"status":"changed"}'
-        simulator_gui.save_config(config)
-        with self.request("/api/device/info") as response:
-            self.assertEqual({"status": "changed"}, json.load(response))
-
     def test_running_protocol_uses_activated_immutable_dataset_snapshot(self):
-        client = simulator_gui.app.test_client()
-        datasets = Path(self.tempdir.name) / "datasets"
-        client.post("/api/dataset-directory/switch", json={"path": str(datasets)})
-        created = client.post("/api/datasets", json={
+        # Release the setUp snapshot so this test can activate its own.
+        released = self.client.post("/api/runtime/release", json={"execution_id": "rest-setup"})
+        self.assertEqual(200, released.status_code, released.get_json())
+        created = self.client.post("/api/datasets", json={
             "id": "snapshot", "commands": [], "rest_routes": [{
                 "method": "GET", "uri": "/snapshot", "status_code": 200,
                 "response_headers": {"Content-Type": "application/json"},
                 "response_body": '{"value":"before"}'
             }]}).get_json()
-        client.put("/api/bindings/TC.Snapshot.001", json={"dataset_id": "snapshot"})
-        activated = client.post("/api/runtime/activate-case", json={
+        self.client.put("/api/bindings/TC.Snapshot.001", json={"dataset_id": "snapshot"})
+        activated = self.client.post("/api/runtime/activate-case", json={
             "case_id": "TC.Snapshot.001", "execution_id": "rest-run"})
         self.assertEqual(200, activated.status_code, activated.get_json())
 
         created["rest_routes"][0]["response_body"] = '{"value":"after"}'
-        client.put("/api/datasets/snapshot", json=created)
+        self.client.put("/api/datasets/snapshot", json=created)
         with self.request("/snapshot") as response:
             self.assertEqual({"value": "before"}, json.load(response))
-
-    def test_config_normalizes_explicit_and_legacy_groups(self):
-        config = {
-            "commands": [{"name": "show", "group": "System", "output": "ok"}],
-            "command_groups": ["Empty", "System", "Empty"],
-            "rest_routes": [{"method": "GET", "uri": "/x", "group": "Device"}],
-            "rest_groups": [],
-        }
-        normalized = simulator_gui.normalize_groups(config)
-        self.assertEqual(["Empty", "System"], normalized["command_groups"])
-        self.assertEqual(["Device"], normalized["rest_groups"])
 
     def test_log_import_extracts_multiline_json_and_reports_skipped_routes(self):
         log_text = """2026-08-15 15:42:05:685 [INFO] ##url : /redfish/v1/Chassis ##method : GET ##ip : 127.0.0.1 (RedfishConnestion.java:541) [http-nio-exec-9](pid-3240)
@@ -184,8 +174,8 @@ class RestSimulatorTests(unittest.TestCase):
 2026-08-15 15:42:05:703 [INFO] ##result : {\"status\":\"duplicate\"} (RedfishConnestion.java:761) [http-nio-exec-10](pid-3240)
 2026-08-15 15:42:05:704 [INFO] ##url : /redfish/v1/Chassis/1 ##method : GET ##ip : 127.0.0.1 (RedfishConnestion.java:541) [http-nio-exec-9](pid-3240)"""
 
-        response = simulator_gui.app.test_client().post(
-            "/api/rest/import-log/preview", json={"log_text": log_text})
+        response = self.client.post(
+            "/api/rest/import-log/preview", json={"dataset_id": "rest", "log_text": log_text})
 
         self.assertEqual(200, response.status_code)
         result = response.get_json()
@@ -226,7 +216,7 @@ class RestSimulatorTests(unittest.TestCase):
         self.assertEqual({"Content-Type": "application/json"}, routes[1]["response_headers"])
 
     def test_log_import_rejects_empty_text(self):
-        response = simulator_gui.app.test_client().post(
+        response = self.client.post(
             "/api/rest/import-log/preview", json={"log_text": "  "})
         self.assertEqual(400, response.status_code)
 

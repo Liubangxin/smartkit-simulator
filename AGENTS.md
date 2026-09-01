@@ -92,6 +92,7 @@ npm run dist
 - 工作台编辑与运行快照隔离：编辑数据集不会改变已经激活的快照。
 - 全局设置持久化在 `settings.json`，不随数据集切换；SSH/REST 监听地址、端口和 SSH 用户名/密码由全局设置统一管理，数据集文件不保存服务配置。
 - REST 路由按“HTTP 方法 + URI”匹配，支持 `{session_id}` 形式的单段路径参数；固定 URI 的匹配优先级高于参数化 URI。
+- SSH 命令支持可选有序 `outputs`（round-robin 循环返回、每 SSH 连接独立计数、`output` 镜像 `outputs[0]`）；未配置时保持单输出行为。
 - 默认端点：管理服务 `127.0.0.1:35800`，SSH `2222`，REST HTTPS `8080`。
 - 术语定义参考 `CONTEXT.md`，详细设计参考 `docs/simulator-dataset-architecture.md`。
 

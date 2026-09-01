@@ -138,9 +138,10 @@ datasets/
   "commands": [
     {
       "group": "基础信息",
-      "name": "show system general",
+      "name": "show alarm",
       "description": "查询系统信息",
-      "output": "System Health: OK"
+      "output": "System Health: OK",
+      "outputs": ["System Health: OK", "System Health: Warning"]
     }
   ],
   "rest_groups": ["System"],
@@ -192,6 +193,8 @@ SSH 服务的监听地址、端口、用户名和密码来自全局设置，命�
 | `{date_mmdd}` | `MMDD` 日期 |
 | `{date_yyyymmdd}` | `YYYYMMDD` 日期 |
 | `{sn}` | 随机九位数字 |
+
+同一命令可以配置多条有序输出（`outputs` 字段）：模拟器按执行顺序循环返回，每次 SSH 连接独立计数；未配置 `outputs` 时保持单输出行为。执行日志导入会自动把同命令多次执行的不同输出合并为有序序列，缺失响应的执行以空输出占位。详见 [同命令多输出设计](docs/simulator-command-multi-outputs.md)。
 
 ### SSH 日志导入
 

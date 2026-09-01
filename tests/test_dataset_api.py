@@ -107,6 +107,40 @@ class DatasetApiTests(unittest.TestCase):
         self.assertEqual("normal", response.get_json()["id"])
         self.assertTrue((self.datasets / "normal.json").is_file())
 
+    def test_dataset_command_outputs_are_normalized_and_mirrored(self):
+        self.client.post("/api/dataset-directory/switch", json={"path": str(self.datasets)})
+        created = self.client.post("/api/datasets", json={
+            "id": "multi", "name": "多输出", "commands": [
+                {"name": "show alarm", "outputs": ["a", "b", "c"]},
+                {"name": "show version", "output": "v1"},
+                {"name": "empty", "outputs": []},
+            ], "rest_routes": []})
+        self.assertEqual(201, created.status_code, created.get_json())
+
+        stored = json.loads((self.datasets / "multi.json").read_text(encoding="utf-8"))
+        by_name = {command["name"]: command for command in stored["commands"]}
+        self.assertEqual(["a", "b", "c"], by_name["show alarm"]["outputs"])
+        self.assertEqual("a", by_name["show alarm"]["output"])          # mirrored
+        self.assertNotIn("outputs", by_name["show version"])            # legacy untouched
+        self.assertEqual("v1", by_name["show version"]["output"])
+        self.assertNotIn("outputs", by_name["empty"])                   # empty list dropped
+
+    def test_dataset_command_outputs_must_be_string_list(self):
+        self.client.post("/api/dataset-directory/switch", json={"path": str(self.datasets)})
+        response = self.client.post("/api/datasets", json={
+            "id": "bad", "name": "非法多输出",
+            "commands": [{"name": "x", "outputs": ["ok", 42]}], "rest_routes": []})
+        self.assertEqual(400, response.status_code)
+
+    def test_dataset_commands_must_have_unique_names(self):
+        self.client.post("/api/dataset-directory/switch", json={"path": str(self.datasets)})
+        response = self.client.post("/api/datasets", json={
+            "id": "dup", "name": "重复命令",
+            "commands": [{"name": "show", "output": "a"}, {"name": "show", "output": "b"}],
+            "rest_routes": []})
+        self.assertEqual(400, response.status_code)
+        self.assertIn("重复", response.get_json()["message"])
+
     def test_case_catalog_is_paged_and_case_can_be_rebound(self):
         self.client.post("/api/dataset-directory/switch", json={"path": str(self.datasets)})
         for dataset_id in ("normal", "alarm"):
@@ -338,13 +372,16 @@ device:/> (SshConnection.java:1513) [thread-a](pid-1)
         payload = self.client.post("/api/ssh/import-log/preview", json={
             "dataset_id": "ssh-edge", "log_text": log_text}).get_json()
 
-        self.assertEqual({"total": 5, "importable": 2, "duplicate": 2, "incomplete": 1},
+        self.assertEqual({"total": 4, "importable": 3, "duplicate": 1, "incomplete": 1},
                          payload["summary"])
         by_name = {entry["command"]["name"]: entry for entry in payload["commands"]}
-        self.assertEqual("alpha-output", payload["commands"][0]["command"]["output"])
+        self.assertEqual(["alpha-output", "second-alpha"],
+                         by_name["alpha"]["command"]["outputs"])
         self.assertEqual("beta-output", by_name["beta"]["command"]["output"])
+        self.assertEqual(["beta-output"], by_name["beta"]["command"]["outputs"])
         self.assertEqual("duplicate", by_name["existing"]["status"])
-        self.assertEqual("missing_response", by_name["orphan"]["status"])
+        self.assertEqual("ready", by_name["orphan"]["status"])
+        self.assertEqual([""], by_name["orphan"]["command"]["outputs"])
 
     def test_ssh_log_preview_validates_log_and_dataset(self):
         empty = self.client.post("/api/ssh/import-log/preview", json={"log_text": ""})

@@ -126,6 +126,17 @@ const context = {
              commands: [{name: "show", output: "ok"}],
              rest_routes: [{method: "GET", uri: "/health", status_code: 200,
                             response_headers: {}, response_body: "ok"}]}
+          : url === "/api/datasets/seq"
+            ? {id: "seq", name: "序列", description: "", revision: 1,
+               commands: [{name: "show alarm", description: "", group: "",
+                           output: "a", outputs: ["a", "b", "c"]}],
+               rest_routes: []}
+          : url === "/api/datasets/dup"
+            ? {id: "dup", name: "重复", description: "", revision: 1,
+               commands: [
+                 {name: "show", description: "", group: "", output: "a"},
+                 {name: "show", description: "", group: "", output: "b"},
+               ], rest_routes: []}
           : url === "/api/runtime/status" ? {status: "idle"}
           : url === "/api/services/status" ? {ssh: false, rest: false}
           : url === "/api/rest/test" ? {status: "ok", status_code: 200, elapsed_ms: 12,
@@ -134,8 +145,8 @@ const context = {
           : url === "/api/ssh/import-log/preview" ? {status: "ok",
               summary: {total: 2, importable: 1, duplicate: 1, incomplete: 0},
               commands: [
-                {status: "ready", command: {name: "show imported", description: "从日志导入", group: "", output: "ok"}},
-                {status: "duplicate", command: {name: "show", description: "从日志导入", group: "", output: "old"}},
+                {status: "ready", command: {name: "show imported", description: "从日志导入", group: "", output: "ok", outputs: ["ok"]}},
+                {status: "duplicate", command: {name: "show", description: "从日志导入", group: "", output: "old", outputs: ["old"]}},
               ]}
           : url === "/api/rest/import-log/preview" ? {status: "ok",
               summary: {total: 1, importable: 0, duplicate: 1, incomplete: 0},
@@ -219,6 +230,9 @@ setImmediate(async () => {
   const savedDataset = JSON.parse(saveRequest.options.body);
   assert.ok(savedDataset.commands.some(command => command.name === "show imported"
     && command.group === "Imported"), "selected SSH commands must be saved in the target group");
+  assert.ok(savedDataset.commands.some(command => command.name === "show imported"
+    && Array.isArray(command.outputs) && command.outputs[0] === "ok"),
+    "imported SSH commands must carry their ordered outputs");
   assert.strictEqual(savedDataset.commands.filter(command => command.name === "show").length, 1,
     "overwriting a duplicate SSH command must not append a second command");
   assert.ok(savedDataset.commands.some(command => command.name === "show"
@@ -258,5 +272,48 @@ setImmediate(async () => {
   const deleteRequest = requests.findLast(request => request.url === "/api/datasets/normal"
     && request.options.method === "DELETE");
   assert.ok(deleteRequest, "deleting a dataset must call the DELETE API");
+  // SSH sequence editor: ordered outputs render one textarea per variant and persist in order.
+  await context.selectDataset("seq");
+  await context.setWorktab("ssh");
+  await context.toggleEdit();
+  assert.ok(element("root").innerHTML.includes('id="commandOutput0"'),
+    "sequence editor must render a textarea per output variant");
+  assert.ok(element("root").innerHTML.includes('id="commandOutput2"'),
+    "sequence editor must render every output variant");
+  element("commandOutput0").value = "alarm-a";
+  element("commandOutput1").value = "alarm-b";
+  element("commandOutput2").value = "alarm-c";
+  await context.saveRevision();
+  const seqSaveRequest = requests.findLast(request => request.url === "/api/datasets/seq"
+    && request.options.method === "PUT");
+  const seqSaved = JSON.parse(seqSaveRequest.options.body);
+  assert.deepStrictEqual(seqSaved.commands[0].outputs, ["alarm-a", "alarm-b", "alarm-c"],
+    "saving the sequence editor must persist the ordered outputs");
+  assert.strictEqual(seqSaved.commands[0].output, "alarm-a",
+    "output must mirror the first variant for legacy readers");
+  await context.toggleEdit();
+  await context.addOutput();
+  assert.ok(element("root").innerHTML.includes('id="commandOutput3"'),
+    "adding a variant must render a new textarea");
+  // Bug fix: unsaved textarea edits must survive adding a variant.
+  element("commandOutput0").value = "edited-a";
+  element("commandOutput2").value = "edited-c";
+  await context.addOutput();
+  await context.saveRevision();
+  const seqSave2Request = requests.findLast(request => request.url === "/api/datasets/seq"
+    && request.options.method === "PUT");
+  assert.deepStrictEqual(JSON.parse(seqSave2Request.options.body).commands[0].outputs,
+    ["edited-a", "alarm-b", "edited-c", "", ""],
+    "adding a variant must keep unsaved textarea edits");
+  // Bug fix: duplicate SSH command names are rejected before saving.
+  await context.selectDataset("dup");
+  await context.setWorktab("ssh");
+  await context.toggleEdit();
+  await context.selectItem(0);
+  element("commandName").value = "show";
+  await context.saveRevision();
+  const dupSaveRequest = requests.findLast(request => request.url === "/api/datasets/dup"
+    && request.options.method === "PUT");
+  assert.ok(!dupSaveRequest, "duplicate SSH command names must not be saved");
   console.log("production prototype-based UI syntax and bootstrap checks passed");
 });

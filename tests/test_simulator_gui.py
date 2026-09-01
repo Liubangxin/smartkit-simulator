@@ -126,6 +126,91 @@ class SimulatorGuiSshTests(unittest.TestCase):
         self.assertIn(old_output, stdout)
         self.assertNotIn(new_output, stdout)
 
+    def exec_commands_on_connection(self, port, username, password, commands):
+        """Open one SSH connection and run each command on it."""
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        try:
+            client.connect(
+                "127.0.0.1",
+                port=port,
+                username=username,
+                password=password,
+                look_for_keys=False,
+                allow_agent=False,
+                timeout=10,
+            )
+            outputs = []
+            for command in commands:
+                _stdin, stdout, stderr = client.exec_command(command, timeout=10)
+                outputs.append(stdout.read().decode("utf-8", errors="replace").strip())
+            return outputs
+        finally:
+            client.close()
+
+    def test_same_command_executions_return_ordered_outputs_round_robin(self):
+        port = free_port()
+        command = {"name": "show alarm", "description": "",
+                   "outputs": ["Alarm: critical", "Alarm: none", "Alarm: cleared"]}
+        dataset = self.create_dataset("ssh-seq", [command])
+        self.activate("ssh-seq", "run-seq")
+        simulator_gui.stop_event.clear()
+        threading.Thread(
+            target=simulator_gui.run_server,
+            args=("127.0.0.1", port, self.USERNAME, self.PASSWORD,
+                  list(dataset["commands"])),
+            daemon=True,
+        ).start()
+        time.sleep(1.0)
+
+        outputs = self.exec_commands_on_connection(
+            port, self.USERNAME, self.PASSWORD, ["show alarm"] * 4)
+
+        self.assertEqual(["Alarm: critical", "Alarm: none", "Alarm: cleared", "Alarm: critical"],
+                         outputs)
+
+    def test_sequence_counter_is_isolated_per_connection(self):
+        port = free_port()
+        command = {"name": "show alarm", "description": "", "outputs": ["first", "second"]}
+        dataset = self.create_dataset("ssh-conn", [command])
+        self.activate("ssh-conn", "run-conn")
+        simulator_gui.stop_event.clear()
+        threading.Thread(
+            target=simulator_gui.run_server,
+            args=("127.0.0.1", port, self.USERNAME, self.PASSWORD,
+                  list(dataset["commands"])),
+            daemon=True,
+        ).start()
+        time.sleep(1.0)
+
+        # One connection advances through the sequence...
+        self.assertEqual(["first", "second"],
+                         self.exec_commands_on_connection(
+                             port, self.USERNAME, self.PASSWORD, ["show alarm", "show alarm"]))
+        # ...a new connection starts from the beginning again.
+        self.assertEqual(["first"],
+                         self.exec_commands_on_connection(
+                             port, self.USERNAME, self.PASSWORD, ["show alarm"]))
+
+    def test_single_output_command_repeats_same_output(self):
+        port = free_port()
+        command = {"name": "show version", "description": "", "output": "V1.0"}
+        dataset = self.create_dataset("ssh-single", [command])
+        self.activate("ssh-single", "run-single")
+        simulator_gui.stop_event.clear()
+        threading.Thread(
+            target=simulator_gui.run_server,
+            args=("127.0.0.1", port, self.USERNAME, self.PASSWORD,
+                  list(dataset["commands"])),
+            daemon=True,
+        ).start()
+        time.sleep(1.0)
+
+        for _ in range(2):
+            stdout, stderr = self.exec_command(port, self.USERNAME, self.PASSWORD, "show version")
+            self.assertEqual("", stderr)
+            self.assertEqual("V1.0", stdout.strip())
+
     def test_stop_then_start_waits_for_restart_and_uses_reactivated_data(self):
         port = free_port()
         old_output = "old restart output " + uuid.uuid4().hex

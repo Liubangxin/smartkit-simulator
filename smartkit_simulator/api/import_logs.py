@@ -29,10 +29,7 @@ def register(state):
         results = []
         for command in parsed_commands:
             name = command["name"]
-            if command["output"] is None:
-                results.append({"status": "missing_response", "message": "No matching response was found.",
-                                "command": command})
-            elif name in existing:
+            if name in existing:
                 results.append({"status": "duplicate", "message": "The same command already exists.",
                                 "command": command})
             else:
@@ -43,7 +40,9 @@ def register(state):
             "total": len(results),
             "importable": sum(result["status"] == "ready" for result in results),
             "duplicate": sum(result["status"] == "duplicate" for result in results),
-            "incomplete": sum(result["status"] == "missing_response" for result in results),
+            # Informational: sequences that contain empty outputs (still importable).
+            "incomplete": sum(1 for command in parsed_commands
+                              if any(output == "" for output in command["outputs"])),
         }
         return jsonify({"status": "ok", "summary": summary, "commands": results})
 

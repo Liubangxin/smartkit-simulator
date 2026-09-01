@@ -150,7 +150,7 @@ flowchart LR
 | 数据集模块 | 分页查询、读取、创建、保存、导入、导出、归档、扫描目录 | 文件校验、原子保存、文件名安全、缓存重建、文件监听 |
 | 用例目录与绑定模块 | 同步用例目录、分页查询用例、绑定、解绑、批量导入 | `case_id` 唯一性、失效绑定检测、关系文件原子更新 |
 | 执行快照与租约模块 | 按用例激活、查询状态、释放 | 绑定解析、快照复制、并发互斥、超时接管、错误回滚 |
-| SSH 模拟适配器 | 标准 SSH 协议 | 从全局设置读取认证，从活动快照读取命令响应 |
+| SSH 模拟适配器 | 标准 SSH 协议 | 从全局设置读取认证，从活动快照读取命令响应（支持有序多输出，round-robin 循环） |
 | REST 模拟适配器 | 标准 HTTPS 协议 | 从活动快照匹配方法、URI、参数和响应 |
 | E2E 生命周期适配器 | `activate(case_id, execution_id)` / `release(execution_id)` | 管理接口调用、重试、超时、失败归类、`finally` 清理 |
 
@@ -234,7 +234,8 @@ D:\SmartKit-Simulator\datasets\
         "name": "show alarm",
         "description": "查询当前告警",
         "group": "Alarm",
-        "output": "Critical alarm detected"
+        "output": "Critical alarm detected",
+        "outputs": ["Critical alarm detected", "No alarm"]
       }
     ]
   },
@@ -257,6 +258,8 @@ D:\SmartKit-Simulator\datasets\
 ```
 
 监听地址、端口、SSH 认证、证书和执行租约不能放入数据集文件，因为它们是进程级设置，不应随测试场景切换。
+
+SSH 命令可选携带有序 `outputs`（string 数组）：模拟器按执行顺序循环返回（第 k 次执行返回 `outputs[k % n]`），计数按 SSH 连接隔离；`output` 镜像 `outputs[0]`，未配置 `outputs` 时保持单输出行为。日志导入会把同命令多次执行的不同输出合并为有序序列，缺失响应的执行以空输出占位。详见 [同命令多输出设计](simulator-command-multi-outputs.md)。
 
 ### 5.4 用例绑定文件
 

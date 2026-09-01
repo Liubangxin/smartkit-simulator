@@ -356,7 +356,42 @@ class DatasetWorkspace:
             result.setdefault(key, default)
         if not isinstance(result["commands"], list) or not isinstance(result["rest_routes"], list):
             raise WorkspaceError("commands 和 rest_routes 必须是数组")
+        for command in result["commands"]:
+            self._normalize_command(command)
+        self._assert_unique_command_names(result["commands"])
         return result
+
+    @staticmethod
+    def _assert_unique_command_names(commands):
+        """SSH command names must be unique within one dataset."""
+        seen = set()
+        for command in commands:
+            name = command.get("name")
+            if name is None:
+                continue
+            if name in seen:
+                raise WorkspaceError(f"SSH 命令名称不能重复：{name}")
+            seen.add(name)
+
+    @staticmethod
+    def _normalize_command(command):
+        """Validate one SSH command entry.
+
+        ``outputs`` (optional) is an ordered list of outputs served
+        round-robin.  When non-empty, ``output`` mirrors ``outputs[0]`` so
+        readers of the legacy single-output field see the first variant.
+        """
+        if not isinstance(command, dict):
+            raise WorkspaceError("commands 数组中的每一项必须是 JSON 对象")
+        outputs = command.get("outputs")
+        if outputs is not None:
+            if not isinstance(outputs, list) or not all(isinstance(value, str) for value in outputs):
+                raise WorkspaceError(f"命令 {command.get('name', '')} 的 outputs 必须是字符串数组")
+            if outputs:
+                command["output"] = outputs[0]
+            else:
+                command.pop("outputs", None)
+        return command
 
     @staticmethod
     def _read_json(path: Path, default):

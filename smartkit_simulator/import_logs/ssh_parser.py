@@ -30,14 +30,20 @@ def clean_ssh_received_output(command, body):
 
 
 def parse_ssh_commands_from_log(log_text):
-    """Extract SSH commands and pair multiline Receive responses from execution logs."""
+    """Extract SSH commands and pair multiline Receive responses from execution logs.
+
+    Multiple executions of the same command are merged into a single entry
+    whose ``outputs`` list preserves the log order; executions without a
+    captured response contribute an empty string so the sequence stays
+    complete and importable.
+    """
     execute_pattern = re.compile(
         r"^.*?Execute command line\s*:\s*(.*?)\s*,\s*timeout is\s*:\s*\d+.*?$",
         re.MULTILINE)
-    commands = []
+    occurrences = []
     for match in execute_pattern.finditer(log_text):
         name = match.group(1).strip()
-        commands.append({
+        occurrences.append({
             "position": match.start(),
             "thread_id": log_thread_id(match.group(0)),
             "command": {"name": name, "description": "从日志导入", "group": "", "output": None},
@@ -50,7 +56,7 @@ def parse_ssh_commands_from_log(log_text):
     for match in receive_pattern.finditer(log_text):
         name = match.group(1).strip()
         thread_id = log_thread_id(match.group(0))
-        eligible = [entry for entry in commands
+        eligible = [entry for entry in occurrences
                     if entry["position"] < match.start()
                     and entry["command"]["name"] == name
                     and entry["command"]["output"] is None]
@@ -60,4 +66,21 @@ def parse_ssh_commands_from_log(log_text):
                 eligible = same_thread
         if eligible:
             eligible[-1]["command"]["output"] = clean_ssh_received_output(name, match.group(2))
-    return [entry["command"] for entry in commands]
+
+    grouped = {}
+    order = []
+    for entry in occurrences:
+        command = entry["command"]
+        name = command["name"]
+        if name not in grouped:
+            grouped[name] = {"name": name, "description": "从日志导入", "group": "", "outputs": []}
+            order.append(name)
+        output = command["output"]
+        grouped[name]["outputs"].append(output if output is not None else "")
+    result = []
+    for name in order:
+        entry = grouped[name]
+        # Mirror the first output into the legacy single-output field.
+        entry["output"] = entry["outputs"][0] if entry["outputs"] else ""
+        result.append(entry)
+    return result

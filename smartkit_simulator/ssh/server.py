@@ -19,6 +19,8 @@ class SimulatorServer(paramiko.ServerInterface):
         self._username, self._password, self._commands = username, password, commands
         self._command_provider = command_provider or (lambda: self._commands)
         self._log_queue = log_queue
+        #: Per-connection round-robin index keyed by command name.
+        self._output_index = {}
 
     def _log(self, text):
         if self._log_queue is not None:
@@ -57,6 +59,23 @@ class SimulatorServer(paramiko.ServerInterface):
                 return c
         return None
 
+    def _resolve_output(self, entry):
+        """Return the next output for a matched command.
+
+        With ``outputs`` configured the sequence advances per execution
+        (round-robin, isolated per connection).  Without ``outputs`` the
+        legacy single ``output`` is returned unchanged.  A matched command
+        with neither yields "" (executed but produced nothing).
+        """
+        outputs = entry.get("outputs") or []
+        if outputs:
+            index = self._output_index.get(entry["name"], 0)
+            self._output_index[entry["name"]] = index + 1
+            return outputs[index % len(outputs)]
+        if entry.get("output") is not None:
+            return entry["output"]
+        return ""
+
     def _handle_shell(self, channel):
         try:
             channel.send(b"SmartKit Storage Simulator\r\nType 'help' for available commands.\r\n\r\nsmartkit:/>")
@@ -94,7 +113,8 @@ class SimulatorServer(paramiko.ServerInterface):
                         else:
                             entry = self._lookup(cmd)
                             if entry:
-                                channel.send(format_command_output(substitute_variables(entry["output"])).encode())
+                                output = self._resolve_output(entry)
+                                channel.send(format_command_output(substitute_variables(output)).encode())
                             elif cmd:
                                 channel.send(f"Unknown command: {cmd}\r\n".encode())
                                 channel.send(b"Type 'help' for available commands.\r\n")
@@ -111,7 +131,8 @@ class SimulatorServer(paramiko.ServerInterface):
             self._log(f"exec: {command}")
             entry = self._lookup(command)
             if entry:
-                channel.send(format_command_output(substitute_variables(entry["output"])).encode())
+                output = self._resolve_output(entry)
+                channel.send(format_command_output(substitute_variables(output)).encode())
             else:
                 channel.send(f"Unknown command: {command}\r\n".encode())
             channel.send_exit_status(0)

@@ -158,8 +158,22 @@ const context = {
   },
 };
 
+assert.ok(html.includes("function escArea"),
+  "a textarea-safe escaper must exist for multi-line editor content");
+assert.ok(html.includes('escArea(item.output||\'\')'),
+  "the SSH output field must embed text via escArea so leading/trailing blank lines survive");
+assert.ok(html.includes('escArea(item.response_body||\'\')'),
+  "the REST response body field must embed text via escArea so blank lines survive");
+assert.ok(!html.includes('<textarea id="commandOutput" ${disabled()}>${esc('),
+  "SSH output textarea content must not be embedded with plain esc()");
+
 vm.createContext(context);
 vm.runInContext(script, context);
+// escArea must keep blank lines that plain HTML textarea parsing would strip.
+const preserved = context.escArea("\nCritical alarm detected   ");
+assert.ok(preserved.startsWith("&#10;"), "escArea must encode a leading LF as an entity");
+assert.ok(preserved.endsWith("   "), "escArea must keep trailing spaces intact");
+assert.equal(context.escArea("a\r\nb"), "a&#13;&#10;b", "escArea must encode CRLF to entities");
 setImmediate(async () => {
   assert.ok(element("root").innerHTML.includes("正常设备"));
   assert.ok(calls.includes("/api/dataset-directory"));

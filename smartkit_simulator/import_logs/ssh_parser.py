@@ -10,23 +10,42 @@ from .common import log_thread_id
 
 
 def clean_ssh_received_output(command, body):
-    """Strip echo, prompt and Java frame suffixes from a Receive body."""
+    """Strip echo, prompt and Java frame suffixes from a Receive body.
+
+    Blank lines and trailing spaces *inside* the captured output (before the
+    prompt line) are preserved; only the command echo line, the ``xxx:/>``
+    prompt line, the Java metadata frame and any blank lines left after the
+    removed prompt line are dropped.
+    """
     lines = body.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    while lines and not lines[-1].strip():
-        lines.pop()
-    if lines:
-        lines[-1] = re.sub(
-            r"\s*\(SshConnection\.java:\d+\)\s*\[[^\]]+\](?:\(pid-[^)]+\))?\s*$",
-            "", lines[-1]).rstrip()
-    while lines and not lines[-1].strip():
-        lines.pop()
-    if lines and re.fullmatch(r"[^\r\n]*:/>\s*", lines[-1]):
-        lines.pop()
-    while lines and not lines[-1].strip():
-        lines.pop()
-    if lines and lines[0].strip() == command:
-        lines.pop(0)
-    return "\n".join(lines).strip()
+
+    # Remove the trailing Java frame (e.g. "(SshConnection.java:1513)
+    # [thread-a](pid-1)") from the last non-empty line — usually the prompt
+    # line.  Any other trailing spaces on that line stay untouched.
+    last = len(lines) - 1
+    while last >= 0 and not lines[last].strip():
+        last -= 1
+    if last < 0:
+        return ""
+    lines[last] = re.sub(
+        r"\s*\(SshConnection\.java:\d+\)\s*\[[^\]]+\](?:\(pid-[^)]+\))?\s*$",
+        "", lines[last])
+
+    # Drop the prompt line plus whatever blank lines trail it: that line is a
+    # log-tool artifact, and the blank lines after it are capture boundaries,
+    # not device output.
+    if re.fullmatch(r"[^\r\n]*:/>\s*", lines[last]):
+        del lines[last:]
+
+    # Drop the command echo: the first non-empty line that repeats the
+    # command name.  Blank lines before it are preserved.
+    for index, line in enumerate(lines):
+        if line.strip():
+            if line.strip() == command:
+                del lines[index]
+            break
+
+    return "\n".join(lines)
 
 
 def parse_ssh_commands_from_log(log_text):

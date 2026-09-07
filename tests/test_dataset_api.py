@@ -347,6 +347,29 @@ Type 'help' for available commands."""
         self.assertIn("Unknown command", commands[1]["output"])
         self.assertIn("Unknown command", commands[2]["output"])
 
+    def test_ssh_log_preview_preserves_blank_lines_and_trailing_spaces(self):
+        self.client.post("/api/dataset-directory/switch", json={"path": str(self.datasets)})
+        self.client.post("/api/datasets", json={"id": "ssh-whitespace", "commands": []})
+        log_text = """2026-08-17 19:00:00:001 [INFO] Execute command line : show alarm, timeout is : 30 (SshConnection.java:873) [thread-a](pid-1)
+2026-08-17 19:00:00:002 [INFO] Receive str : show alarm
+
+show alarm     
+Critical alarm detected   
+admin:/> (SshConnection.java:1513) [thread-a](pid-1)"""
+
+        response = self.client.post("/api/ssh/import-log/preview", json={
+            "dataset_id": "ssh-whitespace", "log_text": log_text})
+
+        self.assertEqual(200, response.status_code, response.get_json())
+        commands = response.get_json()["commands"]
+        self.assertEqual("ready", commands[0]["status"])
+        # Leading blank line and trailing spaces survive; the echoed command
+        # line, prompt line and Java metadata are still removed.
+        self.assertEqual("\nCritical alarm detected   ", commands[0]["command"]["output"])
+        self.assertEqual(["\nCritical alarm detected   "], commands[0]["command"]["outputs"])
+        self.assertNotIn("admin:/>", commands[0]["command"]["output"])
+        self.assertNotIn("SshConnection.java", commands[0]["command"]["output"])
+
     def test_ssh_log_preview_pairs_threads_and_marks_duplicates_and_incomplete(self):
         self.client.post("/api/dataset-directory/switch", json={"path": str(self.datasets)})
         self.client.post("/api/datasets", json={"id": "ssh-edge", "commands": [

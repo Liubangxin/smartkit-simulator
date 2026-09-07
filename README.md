@@ -203,10 +203,12 @@ SSH 编辑页可以粘贴执行日志并批量导入：
 - `Execute command line :` 用于识别命令。
 - 后续的 `Receive str :` 用于识别多行响应。
 - 命令与响应按照日志线程配对。
-- 命令回显、末尾 `admin:/>` 一类提示符和 Java 日志元数据会被清理。
+- 命令回显、末尾 `admin:/>` 一类提示符和 Java 日志元数据会被清理；响应输出内部的空行与行尾空格会保留。
 - `Unknown command` 等失败响应会保留，以便复现真实行为。
 
-预览结果分为 `ready`、`duplicate` 和 `missing_response`。新命令默认选中；重复命令可以显式选中并覆盖；缺少响应的记录不能导入。
+预览结果分为 `ready`（新命令）和 `duplicate`（已存在，可显式选中并覆盖）；缺失响应的执行以空输出占位，仍可正常导入，同命令多次执行会自动合并为有序 `outputs`。
+
+SSH 与 REST 日志导入的完整解析规格（识别标记、清洗规则、线程配对、多次执行合并）与示例见 [日志导入解析规格](docs/log-import-spec.md)。
 
 ## REST HTTPS 模拟
 
@@ -243,7 +245,7 @@ ResponseInfo : {"a":"1"}
 - 没有匹配到成功响应的请求标记为 `missing_response`。
 - 重复路由按照“HTTP 方法 + URI”判断，可以显式选择并覆盖已有配置。
 
-完整设计见 [REST 路由日志导入格式扩展](docs/rest-log-import-formats.md)。
+完整设计见 [REST 路由日志导入格式扩展](docs/rest-log-import-formats.md)。解析细节与示例另见 [日志导入解析规格](docs/log-import-spec.md)。
 
 ## 用例执行器接入
 
@@ -456,4 +458,5 @@ simulator/
 ## 延伸文档
 
 - [数据集架构设计](docs/simulator-dataset-architecture.md)：数据模型、执行时序、失败处理和 E2E 接入设计。
+- [日志导入解析规格](docs/log-import-spec.md)：SSH 与 REST 日志的识别、清洗、配对与合并规则及示例。
 - [REST 路由日志导入格式扩展](docs/rest-log-import-formats.md)：支持格式、线程配对、默认响应和重复处理规则。

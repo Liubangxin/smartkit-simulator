@@ -49,7 +49,7 @@ class PortabilityTests(unittest.TestCase):
         self.assertNotIn("stop.bat", readme)
         self.assertNotIn("package_portable.ps1", readme)
         self.assertIn("build_electron.ps1 -Clean", readme)
-        self.assertIn("electron/dist/SmartKit-Simulator-1.0.0.exe", readme)
+        self.assertIn("electron/dist/SmartKit-Simulator-1.0.1.exe", readme)
         self.assertIn("PyInstaller", readme)
         self.assertNotIn("build_exe.ps1", readme)
         self.assertIn("--automation", readme)

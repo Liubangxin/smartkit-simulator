@@ -90,7 +90,7 @@ Electron 桌面版启动时会在后台运行 Python 模拟器后端，默认开
 自动化执行器可以使用固定管理端口和显式数据目录启动同一个便携程序：
 
 ```powershell
-.\SmartKit-Simulator-1.0.0.exe --automation `
+.\SmartKit-Simulator-1.0.1.exe --automation `
   --management-port 35800 `
   --data-dir D:\code\smartkit\simulator
 ```
@@ -101,7 +101,7 @@ Electron 桌面版启动时会在后台运行 Python 模拟器后端，默认开
 已有管理后端时，可以只打开并附着一个工作台窗口，不再启动第二个后端：
 
 ```powershell
-.\SmartKit-Simulator-1.0.0.exe --attach-management-url http://127.0.0.1:35800
+.\SmartKit-Simulator-1.0.1.exe --attach-management-url http://127.0.0.1:35800
 ```
 
 ## 数据集
@@ -203,7 +203,7 @@ SSH 编辑页可以粘贴执行日志并批量导入：
 - `Execute command line :` 用于识别命令。
 - 后续的 `Receive str :` 用于识别多行响应。
 - 命令与响应按照日志线程配对。
-- 命令回显、末尾 `smartkit:/>` 一类提示符和 Java 日志元数据会被清理。
+- 命令回显、末尾 `admin:/>` 一类提示符和 Java 日志元数据会被清理。
 - `Unknown command` 等失败响应会保留，以便复现真实行为。
 
 预览结果分为 `ready`、`duplicate` 和 `missing_response`。新命令默认选中；重复命令可以显式选中并覆盖；缺少响应的记录不能导入。
@@ -359,10 +359,10 @@ powershell -ExecutionPolicy Bypass -File .\build_electron.ps1 -Clean
 
 ```text
 dist/backend/simulator_gui.exe
-electron/dist/SmartKit-Simulator-1.0.0.exe
+electron/dist/SmartKit-Simulator-1.0.1.exe
 ```
 
-最终交付文件为 `electron/dist/SmartKit-Simulator-1.0.0.exe`。
+最终交付文件为 `electron/dist/SmartKit-Simulator-1.0.1.exe`。
 
 ### 分步构建和开发运行
 

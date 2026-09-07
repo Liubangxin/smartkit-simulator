@@ -318,12 +318,12 @@ class DatasetApiTests(unittest.TestCase):
 2026-08-17 19:22:34:639 [INFO] Receive str : show system general
 System Name         : OceanStor_24A.Storage
 Health Status       : Normal
-smartkit:/> (SshConnection.java:1513) [login_device_pool-4-thread-2](pid-25320)
+admin:/> (SshConnection.java:1513) [login_device_pool-4-thread-2](pid-25320)
 2026-08-17 19:22:34:647 [INFO] Execute command line : show system general|filterColumn exclude columnList=Product\sModel, timeout is : 30 (SshConnection.java:873) [login_device_pool-4-thread-2](pid-25320)
 2026-08-17 19:22:34:774 [INFO] Receive str : show system general|filterColumn exclude columnList=Product\sModel
 Unknown command: show system general|filterColumn exclude columnList=Product\sModel
 Type 'help' for available commands.
-smartkit:/> (SshConnection.java:1513) [login_device_pool-4-thread-2](pid-25320)
+admin:/> (SshConnection.java:1513) [login_device_pool-4-thread-2](pid-25320)
 2026-08-17 19:22:34:845 [INFO] Execute command line : show user user_name=admin, timeout is : 30 (SshConnection.java:873) [login_device_pool-4-thread-2](pid-25320)
 2026-08-17 19:22:34:959 [INFO] Receive str : show user user_name=admin
 Unknown command: show user user_name=admin
@@ -340,7 +340,7 @@ Type 'help' for available commands."""
         self.assertEqual("show system general", commands[0]["name"])
         self.assertIn("System Name", commands[0]["output"])
         self.assertNotIn("show system general\n", commands[0]["output"])
-        self.assertNotIn("smartkit:/>", commands[0]["output"])
+        self.assertNotIn("admin:/>", commands[0]["output"])
         self.assertNotIn("SshConnection.java", commands[0]["output"])
         self.assertEqual(r"show system general|filterColumn exclude columnList=Product\sModel",
                          commands[1]["name"])

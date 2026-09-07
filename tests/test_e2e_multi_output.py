@@ -177,18 +177,18 @@ class MultiOutputEndToEndTests(unittest.TestCase):
 2026-08-17 19:00:00:002 [INFO] Receive str : show alarm
 show alarm
 Critical alarm detected
-smartkit:/> (SshConnection.java:1513) [thread-a](pid-1)
+admin:/> (SshConnection.java:1513) [thread-a](pid-1)
 2026-08-17 19:00:00:003 [INFO] Execute command line : show alarm, timeout is : 30 (SshConnection.java:873) [thread-a](pid-1)
 2026-08-17 19:00:00:004 [INFO] Receive str : show alarm
 show alarm
 No alarm
-smartkit:/> (SshConnection.java:1513) [thread-a](pid-1)
+admin:/> (SshConnection.java:1513) [thread-a](pid-1)
 2026-08-17 19:00:00:005 [INFO] Execute command line : show alarm, timeout is : 30 (SshConnection.java:873) [thread-a](pid-1)
 2026-08-17 19:00:00:006 [INFO] Execute command line : show disk, timeout is : 30 (SshConnection.java:873) [thread-a](pid-1)
 2026-08-17 19:00:00:007 [INFO] Receive str : show disk
 show disk
 Disk OK
-smartkit:/> (SshConnection.java:1513) [thread-a](pid-1)"""
+admin:/> (SshConnection.java:1513) [thread-a](pid-1)"""
         try:
             self.create_dataset("import-e2e", [])
             # Preview: show alarm appears 3 times (2 responses, 1 missing) -> merged

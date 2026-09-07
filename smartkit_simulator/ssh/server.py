@@ -78,7 +78,7 @@ class SimulatorServer(paramiko.ServerInterface):
 
     def _handle_shell(self, channel):
         try:
-            channel.send(b"SmartKit Storage Simulator\r\nType 'help' for available commands.\r\n\r\nsmartkit:/>")
+            channel.send(b"SmartKit Storage Simulator\r\nType 'help' for available commands.\r\n\r\nadmin:/>")
             buf = b""
             while not channel.closed:
                 try:
@@ -118,7 +118,7 @@ class SimulatorServer(paramiko.ServerInterface):
                             elif cmd:
                                 channel.send(f"Unknown command: {cmd}\r\n".encode())
                                 channel.send(b"Type 'help' for available commands.\r\n")
-                        channel.send(b"smartkit:/>")
+                        channel.send(b"admin:/>")
                         continue
                     buf += bytes([b])
         except (EOFError, OSError):

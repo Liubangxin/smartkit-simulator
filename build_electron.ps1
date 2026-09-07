@@ -63,7 +63,7 @@ if ($portableExe) {
     Write-Host " Output: $($portableExe.FullName)" -ForegroundColor White
     Write-Host " Size:   $sizeMB MB" -ForegroundColor White
     Write-Host ""
-    Write-Host "Double-click SmartKit-Simulator-1.0.0.exe to launch." -ForegroundColor Yellow
+    Write-Host "Double-click $($portableExe.Name) to launch." -ForegroundColor Yellow
 } else {
     throw "Portable exe not found in output directory"
 }

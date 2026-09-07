@@ -12,4 +12,4 @@ Layered layout (dependency direction: api -> services -> pure helpers):
     security/    - self-signed TLS certificate generation
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"

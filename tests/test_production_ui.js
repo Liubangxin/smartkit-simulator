@@ -84,6 +84,24 @@ assert.ok(html.includes("settingsSshUsername"),
 assert.ok(!html.includes("sshUsername"),
   "SSH credentials must not be edited inside a dataset");
 
+// Runtime log pane: timestamp prefix, newest-1000-line cap, and smart tail-follow scrolling.
+assert.ok(html.includes("const LOG_MAX = 1000;"),
+  "the runtime log pane must keep at most the newest 1000 lines");
+assert.ok(!html.includes("state.logs.length>200"),
+  "the old 200-line log cap must be replaced by the shared LOG_MAX cap");
+assert.ok(html.includes("state.logs.push('[' + logStamp() + '] ' + line)"),
+  "every log line must receive a timestamp prefix when appended");
+assert.ok(html.includes("logs.forEach(line=>pushLog(line))"),
+  "backend log batches must flow through the timestamping pushLog helper");
+assert.ok(html.includes("function syncLogView()"),
+  "a scroll sync pass must restore/advance the log pane after each render");
+assert.ok(html.includes("function logStamp()"),
+  "a timestamp formatter must exist for log lines");
+assert.ok(html.includes("state.logStick"),
+  "the log pane must track whether the user is reading history or following the tail");
+assert.ok(html.includes("deleteEntry}syncLogView()}"),
+  "render must re-sync the log view after rebuilding the DOM");
+
 const elements = {};
 const element = (id) => elements[id] ||= {id, innerHTML: "", value: "", classList: {add() {}, remove() {}}};
 const calls = [];
@@ -174,6 +192,21 @@ const preserved = context.escArea("\nCritical alarm detected   ");
 assert.ok(preserved.startsWith("&#10;"), "escArea must encode a leading LF as an entity");
 assert.ok(preserved.endsWith("   "), "escArea must keep trailing spaces intact");
 assert.equal(context.escArea("a\r\nb"), "a&#13;&#10;b", "escArea must encode CRLF to entities");
+
+// pushLog: stamp every line with a timestamp and keep only the newest LOG_MAX lines.
+(function () {
+  const block = script.slice(script.indexOf("const LOG_MAX"), script.indexOf("// ===== 4."));
+  const sandbox = { logs: [] };
+  const helpers = new Function("state", block + "\nreturn { pushLog: pushLog };");
+  const { pushLog } = helpers(sandbox);
+  for (let i = 0; i < 1200; i++) pushLog("payload " + i);
+  assert.strictEqual(sandbox.logs.length, 1000,
+    "pushLog must keep at most the newest 1000 lines");
+  assert.match(sandbox.logs[0], /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] payload 200$/,
+    "after dropping the 200 oldest entries the window must start at payload 200");
+  assert.ok(sandbox.logs.every(line => /^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] /.test(line)),
+    "every kept line must carry the timestamp prefix");
+})();
 setImmediate(async () => {
   assert.ok(element("root").innerHTML.includes("正常设备"));
   assert.ok(calls.includes("/api/dataset-directory"));

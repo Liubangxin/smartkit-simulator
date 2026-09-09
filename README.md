@@ -196,6 +196,18 @@ SSH 服务的监听地址、端口、用户名和密码来自全局设置，命�
 
 同一命令可以配置多条有序输出（`outputs` 字段）：模拟器按执行顺序循环返回，每次 SSH 连接独立计数；未配置 `outputs` 时保持单输出行为。执行日志导入会自动把同命令多次执行的不同输出合并为有序序列，缺失响应的执行以空输出占位。详见 [同命令多输出设计](docs/simulator-command-multi-outputs.md)。
 
+### SSH 主机密钥与免确认连接
+
+SSH 连接本身不要求客户端提供证书，模拟器的 SSH 认证只有用户名/密码（来自全局设置）。首次连接时，客户端会要求确认服务端的**主机密钥（host key）指纹**，例如 OpenSSH 的 `The authenticity of host ... can't be established` 提示、paramiko 默认的拒绝策略或 PuTTY 的指纹确认框。这是 SSH 协议内建的反中间人校验，由**客户端**执行，任何 SSH 服务端（真实存储设备同样如此）都无法在服务端关闭它；主机密钥不是需要模拟器配置或导入的证书。
+
+模拟器的主机密钥是 SSH 监听首次启动时自动生成的 `host_key` 文件，位于数据目录下。数据目录变化（新机器、便携版换目录、`--data-dir` 指向新位置）会导致指纹改变，客户端会再次要求确认，或直接报 `REMOTE HOST IDENTIFICATION HAS CHANGED`。自动化环境建议固定 `--data-dir` 以复用同一主机密钥，或在更换环境后按新指纹刷新客户端 known_hosts。
+
+客户端免确认连接的常用做法（仅测试环境使用）：
+
+- OpenSSH：首次连接自动接受新主机指纹 `ssh -o StrictHostKeyChecking=accept-new admin@<host> -p <port>`；完全跳过校验（不推荐）`ssh -o StrictHostKeyChecking=no admin@<host> -p <port>`。
+- Paramiko：连接前调用 `client.set_missing_host_key_policy(paramiko.AutoAddPolicy())`。
+- 预置 known_hosts：在客户端机器执行一次 `ssh-keyscan -p <port> <host> >> ~/.ssh/known_hosts`，此后连接不再询问。
+
 ### SSH 日志导入
 
 SSH 编辑页可以粘贴执行日志并批量导入：

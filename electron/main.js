@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, screen } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, screen } = require("electron");
 const { spawn, execFileSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
@@ -12,6 +12,8 @@ let backendProcess = null;
 let mainWindow = null;
 let readyPort = null;
 let isQuitting = false;
+let quitConfirmed = false;
+let quitDialogOpen = false;
 
 function projectRoot() {
   return path.resolve(__dirname, "..");
@@ -91,6 +93,67 @@ function killBackendTree() {
     try { backendProcess.kill(); } catch (_) {}
   }
   backendProcess = null;
+}
+
+// Only the management page hosted by our own local backend may ask for a
+// folder picker; anything else (redirects, devtools navigation) is ignored.
+function isTrustedDialogSender(event) {
+  if (!mainWindow || !event.sender || event.sender !== mainWindow.webContents) return false;
+  let url;
+  try {
+    url = event.senderFrame ? new URL(event.senderFrame.url) : new URL(event.sender.getURL());
+  } catch (_) {
+    return false;
+  }
+  return (
+    (url.protocol === "http:" || url.protocol === "https:") &&
+    (url.hostname === "127.0.0.1" || url.hostname === "localhost")
+  );
+}
+
+// Native "choose a folder" dialog for the dataset-directory pickers in the
+// workbench page. Resolves with the picked absolute path, or null on cancel.
+ipcMain.handle("pick-directory", async (event, defaultPath) => {
+  if (!isTrustedDialogSender(event)) return null;
+  const options = {
+    title: "选择数据集目录",
+    buttonLabel: "选择此文件夹",
+    properties: ["openDirectory", "createDirectory"],
+  };
+  if (typeof defaultPath === "string" && defaultPath.trim()) {
+    options.defaultPath = defaultPath.trim();
+  }
+  const result = await dialog.showOpenDialog(mainWindow, options);
+  return result && !result.canceled && result.filePaths.length
+    ? result.filePaths[0]
+    : null;
+});
+
+function confirmAndQuit() {
+  if (AUTOMATION_MODE || quitConfirmed || quitDialogOpen || !mainWindow) return;
+  quitDialogOpen = true;
+  dialog
+    .showMessageBox(mainWindow, {
+      type: "question",
+      buttons: ["退出", "取消"],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+      title: "退出 SmartKit Simulator",
+      message: "确定要关闭 SmartKit 模拟器吗？",
+      detail: "关闭后 SSH / REST 模拟服务将停止，正在运行的测试会话将被中断。",
+    })
+    .then(({ response }) => {
+      if (response === 0) {
+        quitConfirmed = true;
+        isQuitting = true;
+        app.quit();
+      }
+    })
+    .catch(() => {})
+    .finally(() => {
+      quitDialogOpen = false;
+    });
 }
 
 function showFatal(message) {
@@ -188,6 +251,7 @@ app.whenReady().then(async () => {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: path.join(__dirname, "preload.js"),
     },
   });
 
@@ -203,6 +267,11 @@ app.whenReady().then(async () => {
   mainWindow.show();
   mainWindow.focus();
   mainWindow.on("closed", () => { mainWindow = null; });
+  mainWindow.on("close", (event) => {
+    if (quitConfirmed) return;
+    event.preventDefault();
+    confirmAndQuit();
+  });
   mainWindow.loadURL(targetUrl);
 });
 
@@ -212,8 +281,13 @@ app.on("window-all-closed", () => {
   app.quit();
 });
 
-app.on("before-quit", () => {
-  isQuitting = true;
+app.on("before-quit", (event) => {
+  if (AUTOMATION_MODE || quitConfirmed) {
+    isQuitting = true;
+    return;
+  }
+  event.preventDefault();
+  confirmAndQuit();
 });
 
 app.on("will-quit", killBackendTree);

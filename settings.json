@@ -16,5 +16,5 @@
     "port": 8080
   },
   "lease_timeout_seconds": 1800,
-  "dataset_directory": "D:\\code\\smartkit\\datasets"
+  "dataset_directory": "D:\\smartkit-simulator\\datasets"
 }

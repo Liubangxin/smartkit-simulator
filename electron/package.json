@@ -1,6 +1,6 @@
 {
   "name": "smartkit-simulator",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "SmartKit Storage Simulator - SSH storage device simulator",
   "main": "main.js",
   "author": "SmartKit",

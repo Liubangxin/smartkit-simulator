@@ -90,7 +90,7 @@ Electron 桌面版启动时会在后台运行 Python 模拟器后端，默认开
 自动化执行器可以使用固定管理端口和显式数据目录启动同一个便携程序：
 
 ```powershell
-.\SmartKit-Simulator-1.0.4.exe --automation `
+.\SmartKit-Simulator-1.0.5.exe --automation `
   --management-port 35800 `
   --data-dir D:\code\smartkit\simulator
 ```
@@ -101,7 +101,7 @@ Electron 桌面版启动时会在后台运行 Python 模拟器后端，默认开
 已有管理后端时，可以只打开并附着一个工作台窗口，不再启动第二个后端：
 
 ```powershell
-.\SmartKit-Simulator-1.0.4.exe --attach-management-url http://127.0.0.1:35800
+.\SmartKit-Simulator-1.0.5.exe --attach-management-url http://127.0.0.1:35800
 ```
 
 ## 数据集
@@ -373,10 +373,10 @@ powershell -ExecutionPolicy Bypass -File .\build_electron.ps1 -Clean
 
 ```text
 dist/backend/simulator_gui.exe
-electron/dist/SmartKit-Simulator-1.0.4.exe
+electron/dist/SmartKit-Simulator-1.0.5.exe
 ```
 
-最终交付文件为 `electron/dist/SmartKit-Simulator-1.0.4.exe`。
+最终交付文件为 `electron/dist/SmartKit-Simulator-1.0.5.exe`。
 
 ### 分步构建和开发运行
 
